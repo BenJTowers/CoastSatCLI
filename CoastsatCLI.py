@@ -74,6 +74,14 @@ def init():
     sitename = typer.prompt("Enter a short project name (e.g., tuk)", default="").strip().lower()
     while not sitename:
         sitename = typer.prompt("Project name cannot be empty. Please enter a short name").strip().lower()
+    
+    # 2a) Ask for output EPSG (default 3156)
+    epsg_input = typer.prompt("Enter desired output EPSG code", default="3156").strip()
+    try:
+        output_epsg = int(epsg_input)
+    except ValueError:
+        typer.secho(f"  [!] '{epsg_input}' is not a valid integer. Using default EPSG=3156.", fg=typer.colors.YELLOW)
+        output_epsg = 3156
 
     # 3) Build paths
     site_dir   = os.path.join(project_dir, sitename)
@@ -128,7 +136,8 @@ def init():
             "transects": os.path.relpath(transects_final, start=site_dir),
             "fes_config": fes_config_path
         },
-        "output_dir": os.path.relpath(output_dir, start=site_dir)
+        "output_dir": os.path.relpath(output_dir, start=site_dir),
+        "output_epsg": output_epsg
     }
 
     settings_path = os.path.join(site_dir, "settings.json")

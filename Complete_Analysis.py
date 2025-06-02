@@ -60,6 +60,9 @@ def load_settings(config_path):
     # FES2022 YAML: absolute, no copy
     if 'fes_config' in inputs_config:
         inputs_config['fes_config'] = str(Path(inputs_config['fes_config']).expanduser().resolve())
+    
+    if 'output_epsg' not in config:
+        raise KeyError("settings.json must include an 'output_epsg' entry.")
 
     # output dir
     if 'output_dir' in config:
@@ -126,7 +129,7 @@ def initial_settings(config):
         # General parameters:
         'cloud_thresh': 0.04,  # Threshold on maximum cloud cover
         'dist_clouds': 25,  # Distance around clouds where shoreline can't be mapped
-        'output_epsg': 3157,  # EPSG code of spatial reference system desired for the output
+        'output_epsg': config['output_epsg'],  # EPSG code of spatial reference system desired for the output
         # Quality control:
         'check_detection': False,  # If True, shows each shoreline detection to the user for validation
         'adjust_detection': False,  # If True, allows user to adjust the position of each shoreline by changing the threshold
@@ -141,6 +144,8 @@ def initial_settings(config):
         # Add the inputs defined previously
         'inputs': inputs,
     }
+
+    print("DEBUG: epsg loaded:" , settings['output_epsg'])
 
     return inputs, settings, metadata
 
