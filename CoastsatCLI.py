@@ -1,12 +1,16 @@
 import os
 import json
 import shutil
+import subprocess
 import typer
 import tkinter as tk
-from tkinter import filedialog
+from tkinter import filedialog, messagebox
 from pathlib import Path
 
-app = typer.Typer(help="CoastSat CLI: initialize projects and inspect outputs.", add_completion=False)
+app = typer.Typer(
+    help="CoastSat CLI: initialize projects, run analysis, and inspect outputs.",
+    add_completion=False
+)
 
 def choose_file(
     title: str = "Select a file",
@@ -14,32 +18,36 @@ def choose_file(
 ) -> str:
     """
     Open a file‐selection dialog and return a validated path.
-    Ensures the dialog appears above all windows on the current monitor.
-    Repeats until the user picks something or exits.
+    Shows a brief notice before launching the system's file explorer
+    (which may take a moment to appear).
     """
     while True:
+        typer.echo("  [Info] Opening your system’s file browser… please wait.")
         root = tk.Tk()
         root.withdraw()
-        # Make the dialog topmost and focused on current monitor
         root.attributes("-topmost", True)
         root.lift()
         root.update()
         filepath = filedialog.askopenfilename(title=title, filetypes=filetypes)
         root.destroy()
+
         if filepath:
-            typer.echo(f"  Selected: {filepath}")
+            typer.secho(f"  ✓ You selected: {filepath}", fg=typer.colors.GREEN)
             return filepath
-        if not typer.confirm("No file chosen. Try again?"):
-            typer.echo("Operation cancelled.")
+
+        if not typer.confirm("No file was selected. Would you like to try again?"):
+            typer.secho("  ⚠️  Operation cancelled by user.", fg=typer.colors.YELLOW)
             raise typer.Exit()
+
 
 def choose_folder(title: str = "Select a folder") -> str:
     """
     Open a folder‐selection dialog and return a validated path.
-    Ensures the dialog appears above all windows on the current monitor.
-    Repeats until the user picks something or exits.
+    Shows a brief notice before launching the system's folder browser
+    (which may take a moment to appear).
     """
     while True:
+        typer.echo("  [Info] Opening your system’s folder browser… please wait.")
         root = tk.Tk()
         root.withdraw()
         root.attributes("-topmost", True)
@@ -47,12 +55,15 @@ def choose_folder(title: str = "Select a folder") -> str:
         root.update()
         folder = filedialog.askdirectory(title=title)
         root.destroy()
+
         if folder:
-            typer.echo(f"  Selected: {folder}")
+            typer.secho(f"  ✓ You selected: {folder}", fg=typer.colors.GREEN)
             return folder
-        if not typer.confirm("No folder chosen. Try again?"):
-            typer.echo("Operation cancelled.")
+
+        if not typer.confirm("No folder was selected. Would you like to try again?"):
+            typer.secho("  ⚠️  Operation cancelled by user.", fg=typer.colors.YELLOW)
             raise typer.Exit()
+
 
 def copy_and_rename(src_path: str, dest_folder: str, new_name: str) -> str:
     """
@@ -64,76 +75,107 @@ def copy_and_rename(src_path: str, dest_folder: str, new_name: str) -> str:
     shutil.copy2(src_path, dest_path)
     return dest_path
 
-@app.command("init", help="Create a new CoastSat project (AOI, shoreline, transects, FES + output structure).")
+
+@app.command(
+    "init",
+    help="Create a new CoastSat project (AOI, shoreline, transects, FES + output structure)."
+)
 def init():
+    """
+    Step‐by‐step project initialization:
+      1) Pick a base directory.
+      2) Enter a project (site) name.
+      3) Enter desired output EPSG.
+      4) Prompt separately for AOI KML, reference GeoJSON, and transects GeoJSON.
+      5) Copy those three inputs under a single progress bar.
+      6) Prompt for FES YAML.
+      7) Create the main output folder and write settings.json.
+      8) Prompt to run the full analysis immediately.
+    """
+    typer.secho("\n=== CoastSat Project Initialization ===", fg=typer.colors.CYAN, bold=True)
+    typer.echo("You will be guided through:")
+    typer.echo("  • Selecting a base directory for your project")
+    typer.echo("  • Naming the project and specifying an EPSG code")
+    typer.echo("  • Choosing AOI, reference shoreline, transects, and FES config files")
+    typer.echo("  • Creating the folder structure and writing settings.json\n")
+
     # 1) Select project folder
-    typer.echo("→ Select the base directory where your new project will live.")
+    typer.echo("→ Step 1: Choose the base directory where your new project will live.")
     project_dir = choose_folder("Choose base project directory")
 
     # 2) Ask for sitename
-    sitename = typer.prompt("Enter a short project name (e.g., tuk)", default="").strip().lower()
+    typer.echo("\n→ Step 2: Enter a short project (site) name (e.g., tuk, patty).")
+    sitename = typer.prompt("  Sitename").strip().lower()
     while not sitename:
-        sitename = typer.prompt("Project name cannot be empty. Please enter a short name").strip().lower()
-    
-    # 2a) Ask for output EPSG (default 3156)
-    epsg_input = typer.prompt("Enter desired output EPSG code", default="3156").strip()
+        sitename = typer.prompt("  Sitename cannot be empty. Please enter a short name").strip().lower()
+    typer.secho(f"  ✓ Project name set to '{sitename}'\n", fg=typer.colors.GREEN)
+
+    # 3) Ask for output EPSG (default 3156)
+    typer.echo("→ Step 3: Specify the output EPSG code (e.g., 3156).")
+    epsg_input = typer.prompt("  Output EPSG", default="3156").strip()
     try:
         output_epsg = int(epsg_input)
     except ValueError:
-        typer.secho(f"  [!] '{epsg_input}' is not a valid integer. Using default EPSG=3156.", fg=typer.colors.YELLOW)
+        typer.secho(f"  [!] '{epsg_input}' is not valid. Defaulting to EPSG 3156.", fg=typer.colors.YELLOW)
         output_epsg = 3156
+    typer.secho(f"  ✓ Output EPSG = {output_epsg}\n", fg=typer.colors.GREEN)
 
-    # 3) Build paths
+    # 4) Build directory paths
     site_dir   = os.path.join(project_dir, sitename)
     input_dir  = os.path.join(site_dir, "inputs")
     output_dir = os.path.join(site_dir, "outputs")
-
-    typer.echo(f"\n— Creating project structure under:  {site_dir}")
+    typer.echo(f"→ Step 4: Creating project folder under\n    {site_dir}")
     os.makedirs(site_dir, exist_ok=True)
 
-    # 4) Prompt for AOI KML
-    typer.echo("\n→ Select your AOI KML file:")
-    aoi_path = choose_file("Select AOI KML", filetypes=[("KML files", "*.kml")])
-    aoi_final = copy_and_rename(
-        aoi_path,
-        os.path.join(input_dir, "aoi"),
-        f"{sitename}_aoi.kml"
-    )
+    # 5–7) Prompt separately for AOI, reference, transects
+    typer.echo("\n→ Step 5: Select your AOI KML file.")
+    typer.echo("   (A file browser will open shortly.)")
+    aoi_src = choose_file("Select AOI KML", filetypes=[("KML files", "*.kml")])
+    aoi_dest = os.path.join(input_dir, "aoi", f"{sitename}_aoi.kml")
 
-    # 5) Prompt for reference GeoJSON
-    typer.echo("\n→ Select your reference shoreline GeoJSON:")
-    ref_path = choose_file("Select reference shoreline", filetypes=[("GeoJSON files", "*.geojson")])
-    ref_final = copy_and_rename(
-        ref_path,
-        os.path.join(input_dir, "reference"),
-        f"{sitename}_ref.geojson"
-    )
+    typer.echo("\n→ Step 6: Select your reference shoreline GeoJSON.")
+    typer.echo("   (A file browser will open shortly.)")
+    ref_src = choose_file("Select reference shoreline", filetypes=[("GeoJSON files", "*.geojson")])
+    ref_dest = os.path.join(input_dir, "reference", f"{sitename}_ref.geojson")
 
-    # 6) Prompt for transects GeoJSON
-    typer.echo("\n→ Select your transects GeoJSON:")
-    transects_path = choose_file("Select transects file", filetypes=[("GeoJSON files", "*.geojson")])
-    transects_final = copy_and_rename(
-        transects_path,
-        os.path.join(input_dir, "transects"),
-        f"{sitename}_transects.geojson"
-    )
+    typer.echo("\n→ Step 7: Select your transects GeoJSON.")
+    typer.echo("   (A file browser will open shortly.)")
+    transects_src = choose_file("Select transects file", filetypes=[("GeoJSON files", "*.geojson")])
+    transects_dest = os.path.join(input_dir, "transects", f"{sitename}_transects.geojson")
 
-    # 7) Prompt for FES YAML (no copy)
-    typer.echo("\n→ Select your FES2022 YAML configuration (no copy will be made):")
+    # 5–7) Copy all three under one progress bar
+    typer.echo("\n→ Step 5–7: Copying input files under progress bar…")
+    from typer import progressbar
+    input_tasks = [
+        (aoi_src, aoi_dest, "AOI KML"),
+        (ref_src, ref_dest, "Reference shoreline GeoJSON"),
+        (transects_src, transects_dest, "Transects GeoJSON")
+    ]
+    with progressbar(input_tasks, label="Copying files") as tasks:
+        for src, dest, label in tasks:
+            os.makedirs(os.path.dirname(dest), exist_ok=True)
+            shutil.copy2(src, dest)
+            typer.secho(f"  ✓ Copied {label} to {dest}", fg=typer.colors.GREEN)
+
+    # 8) Prompt for FES YAML (no copy)
+    typer.echo("\n→ Step 8: Select your FES2022 YAML configuration (no copy will be made).")
+    typer.echo("   (A file browser will open shortly.)")
     fes_config_path = choose_file("Select FES2022 YAML file", filetypes=[("YAML files", "*.yaml;*.yml")])
+    typer.secho(f"  ✓ FES2022 config set to {fes_config_path}\n", fg=typer.colors.GREEN)
 
-    # 8) Create output subfolders
-    typer.echo(f"\n— Creating output subfolders under:  {output_dir}")
-    for sub in ("shorelines", "plots", "time_series"):
-        os.makedirs(os.path.join(output_dir, sub), exist_ok=True)
+    # 9) Create main output directory only
+    typer.echo("→ Step 9: Creating main output directory")
+    os.makedirs(output_dir, exist_ok=True)
+    typer.secho("  ✓ Main output folder created\n", fg=typer.colors.GREEN)
 
-    # 9) Build settings.json
+    # 10) Build settings.json
+    typer.echo("→ Step 10: Writing settings.json")
     settings = {
         "inputs": {
             "sitename": sitename,
-            "aoi_path": os.path.relpath(aoi_final, start=site_dir),
-            "reference_shoreline": os.path.relpath(ref_final, start=site_dir),
-            "transects": os.path.relpath(transects_final, start=site_dir),
+            "aoi_path": os.path.relpath(aoi_dest, start=site_dir),
+            "reference_shoreline": os.path.relpath(ref_dest, start=site_dir),
+            "transects": os.path.relpath(transects_dest, start=site_dir),
             "fes_config": fes_config_path
         },
         "output_dir": os.path.relpath(output_dir, start=site_dir),
@@ -143,14 +185,70 @@ def init():
     settings_path = os.path.join(site_dir, "settings.json")
     with open(settings_path, "w") as f:
         json.dump(settings, f, indent=4)
+    typer.secho("  ✓ settings.json created\n", fg=typer.colors.GREEN)
 
-    typer.secho("\n✅ Project initialized successfully!", fg=typer.colors.GREEN)
+    typer.secho("\n✅ Project initialized successfully!\n", fg=typer.colors.CYAN, bold=True)
     typer.echo(f"  • Sitename           : {sitename}")
-    typer.echo(f"  • AOI (rel. path)    : {settings['inputs']['aoi_path']}")
-    typer.echo(f"  • Reference GeoJSON  : {settings['inputs']['reference_shoreline']}")
-    typer.echo(f"  • Transects GeoJSON  : {settings['inputs']['transects']}")
+    typer.echo(f"  • Output EPSG        : {output_epsg}")
+    typer.echo(f"  • AOI (rel. path)     : {settings['inputs']['aoi_path']}")
+    typer.echo(f"  • Reference GeoJSON   : {settings['inputs']['reference_shoreline']}")
+    typer.echo(f"  • Transects GeoJSON   : {settings['inputs']['transects']}")
     typer.echo(f"  • FES YAML (abs. path): {settings['inputs']['fes_config']}")
-    typer.echo(f"  • Output directory   : {settings['output_dir']}\n")
+    typer.echo(f"  • Output directory    : {settings['output_dir']}\n")
+
+    # 11) Ask user if they want to run analysis immediately
+    typer.echo("→ Would you like to begin the full analysis now?")
+    root_msg = tk.Tk()
+    root_msg.withdraw()
+    root_msg.attributes("-topmost", True)
+    run_now = messagebox.askyesno(
+        "Run Analysis",
+        "settings.json created. Begin analysis now?"
+    )
+    root_msg.destroy()
+
+    if run_now:
+        cmd = [
+            "python",
+            "Complete_Analysis.py",
+            "--config", str(settings_path)
+        ]
+        typer.echo(f"\n→ Running analysis: {' '.join(cmd)}")
+        result = subprocess.run(cmd)
+        if result.returncode == 0:
+            typer.secho("\n✅ Analysis completed successfully!", fg=typer.colors.GREEN)
+        else:
+            typer.secho(f"\n❌ Analysis failed with exit code {result.returncode}.", fg=typer.colors.RED)
+
+
+@app.command("run", help="Run the full CoastSat analysis using your settings.json.")
+def run(
+    config: str = typer.Option(
+        ...,
+        "--config", "-c",
+        help="Path to project settings.json"
+    )
+):
+    """
+    Invoke Complete_Analysis.py with the provided settings.json.
+    """
+    config_path = Path(config).expanduser().resolve()
+    if not config_path.exists():
+        typer.secho(f"ERROR: Cannot find config at {config_path}", fg=typer.colors.RED)
+        raise typer.Exit(code=1)
+
+    cmd = [
+        "python",
+        "Complete_Analysis.py",
+        "--config", str(config_path)
+    ]
+    typer.echo(f"\n→ Running analysis: {' '.join(cmd)}")
+    result = subprocess.run(cmd)
+    if result.returncode == 0:
+        typer.secho("\n✅ Analysis completed successfully!", fg=typer.colors.GREEN)
+    else:
+        typer.secho(f"\n❌ Analysis failed with exit code {result.returncode}.", fg=typer.colors.RED)
+
 
 @app.command("show", help="Show the directory tree under the project's output folder.")
 def show(
@@ -160,9 +258,6 @@ def show(
         help="Path to your project’s settings.json"
     )
 ):
-    """
-    Walk the 'output_dir' defined in settings.json and display subfolders/files.
-    """
     from pathlib import Path
 
     cfg_path = Path(config).expanduser().resolve()
@@ -191,6 +286,7 @@ def show(
         for fname in files:
             typer.echo(f"{indent}    {fname}")
     typer.echo("")
+
 
 if __name__ == "__main__":
     app()
