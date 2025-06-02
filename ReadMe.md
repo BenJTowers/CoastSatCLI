@@ -1,317 +1,209 @@
 # CoastSat Project Toolkit
 
-This repository contains two primary components:
-
-1. **CoastSat CLI (`coastsat_cli.py`)**
-   A simple, interactive command‐line interface (CLI) that helps you scaffold a new CoastSat project directory—with all input files properly organized—and inspect the generated outputs.
-
-2. **Complete Analysis Script (`Complete_Analysis.py`)**
-   The full CoastSat processing pipeline, adapted to load a `settings.json` (created by the CLI) and run shoreline detection, intersection, tide correction, and slope estimation.
+Automate shoreline extraction and analysis using CoastSat via a simple CLI.
 
 ---
 
 ## Table of Contents
 
-1. [Prerequisites](#prerequisites)
-2. [Directory Structure](#directory-structure)
-3. [Installing Dependencies](#installing-dependencies)
-4. [Using the CoastSat CLI (`coastsat_cli.py`)](#using-the-coastsat-cli)
+1. [Overview](#overview)
+2. [Prerequisites](#prerequisites)
+3. [Installation](#installation)
+4. [Quick Start](#quick-start)
+   4.1 [Initialize a Project](#41-initialize-a-project)
+   4.2 [Run the Complete Analysis](#42-run-the-complete-analysis)
+   4.3 [Inspect Output](#43-inspect-output)
+5. [CLI Commands](#cli-commands)
+6. [Settings File (settings.json)](#settings-file-settingsjson)
+7. [Directory Structure](#directory-structure)
+8. [Contributing](#contributing)
+9. [License](#license)
 
-   * [Initialize a New Project](#initialize-a-new-project)
-   * [Inspect the Output Folder](#inspect-the-output-folder)
-5. [Running the Complete Analysis (`Complete_Analysis.py`)](#running-the-complete-analysis)
+---
 
-   * [Preparing Your Environment](#preparing-your-environment)
-   * [Execution Example](#execution-example)
-6. [Configuration File (`settings.json`)](#configuration-file-settingsjson)
-7. [File Explanations](#file-explanations)
-8. [Troubleshooting Tips](#troubleshooting-tips)
+## Overview
+
+The CoastSat Project Toolkit provides a step-by-step Command-Line Interface (CLI) for:
+
+1. Creating a standardized project folder (AOI, reference shoreline, transects, FES config, output).
+2. Auto-detecting the AOI’s CRS (EPSG) or falling back to a default.
+3. Running the full CoastSat analysis (Complete\_Analysis.py) with a single command.
+4. Browsing and visualizing resulting shorelines, time series, and plots.
+
+This README explains how to install, initialize, run, and inspect results in a concise manner.
 
 ---
 
 ## Prerequisites
 
-* **Python 3.8+**
-* A Conda or virtualenv environment is highly recommended.
-* GDAL/proj4 (for GeoPandas/pyproj).
-* The following Python packages (see “Installing Dependencies” below):
+* Python 3.8 or higher (tested on 3.9/3.10).
+* Conda (recommended) or another virtual-environment manager.
+* Required packages (listed in `environment.yml` or `requirements.txt`), including:
 
-  * `numpy`
-  * `pandas`
-  * `scipy`
-  * `matplotlib`
+  * `typer`
+  * `tkinter`
   * `geopandas`
   * `shapely`
-  * `pyproj`
-  * `pyfes`
-  * `typer`
-  * `scikit‐image`
-  * `joblib`
-  * `coastsat` (the CoastSat Python library)
+  * `pandas`, `numpy`, `matplotlib`
+  * CoastSat dependencies (`pyfes`, `scikit-image`, etc.)
+
+Before proceeding, verify key imports:
+
+```bash
+python - <<EOF
+import json, geopandas, typer, tkinter, pyfes, numpy
+print("All required libraries imported successfully")
+EOF
+```
 
 ---
 
-## Directory Structure
+## Installation
 
-When you use the CLI to initialize a new project, it will create a folder hierarchy that looks like this:
-
-```
-<project_root>/
-└── <sitename>/
-    ├── inputs/
-    │   ├── aoi/
-    │   │   └── <sitename>_aoi.kml
-    │   ├── reference/
-    │   │   └── <sitename>_ref.geojson
-    │   └── transects/
-    │       └── <sitename>_transects.geojson
-    ├── outputs/
-    │   ├── shorelines/
-    │   ├── plots/
-    │   └── time_series/
-    ├── settings.json
-    └── coastsat_cli.py       (if you clone or copy it here)
-```
-
-* **`inputs/`**
-
-  * `aoi/`: User’s KML file defining the Area of Interest.
-  * `reference/`: Reference‐shoreline GeoJSON for QC and buffering.
-  * `transects/`: Transect GeoJSON for computing cross-shore distances.
-
-* **`outputs/`**
-
-  * `shorelines/`: (Optional) subfolder for detected shorelines or intermediate files.
-  * `plots/`: Figures generated during analysis (e.g. tide timeseries, slope spectra).
-  * `time_series/`: CSVs with raw and tidally corrected transect time series.
-
-* **`settings.json`**
-  A JSON file created by the CLI that points to all inputs (KML, GeoJSONs, FES YAML) and the relative `output_dir`. Used by `Complete_Analysis.py`.
-
----
-
-## Installing Dependencies
-
-1. **Create or activate a conda environment** (recommended):
+1. **Clone this repository** and change into its folder:
 
    ```bash
-   conda create -n coastsat_env python=3.9
-   conda activate coastsat_env
+   git clone https://github.com/yourusername/coastsat-cli.git  
+   cd coastsat-cli
    ```
 
-2. **Install Python packages**:
+2. **Create and activate a Conda environment** (if you don’t already have one):
 
    ```bash
-   pip install numpy pandas scipy matplotlib geopandas shapely pyproj pyfes typer scikit-image joblib coastsat
+   conda env create -f environment.yml  
+   conda activate coastsat
    ```
 
-   Or, if you have a `requirements.txt`:
+   Or, using pip in a virtual environment:
 
    ```bash
+   python -m venv venv  
+   source venv/bin/activate   # (Linux/macOS)  
+   venv\Scripts\activate     # (Windows)  
    pip install -r requirements.txt
    ```
 
-3. **Verify versions** (especially for GeoPandas/pyproj/GDAL):
+3. **Install CoastSat CLI package**:
 
    ```bash
-   python -c "import geopandas; print('GeoPandas', geopandas.__version__)"
-   python -c "import pyproj; print('pyproj', pyproj.__version__)"
-   python -c "import pyfes; print('pyfes', pyfes.__version__)"
+   pip install -e .
    ```
 
-4. **Ensure FES2022 files** (YAML, tide grids) are available somewhere on disk. The CLI will ask for a path to that YAML (it does not copy it).
+   This installs “coastsatcli” on your PATH, giving you access to `coastsat init`, `coastsat run`, and `coastsat show`.
 
 ---
 
-## Using the CoastSat CLI (`coastsat_cli.py`)
+## Quick Start
 
-The CLI helps you scaffold a new project folder with all required inputs and write a `settings.json`.
+Below is a minimal workflow. After installation, you will:
 
-### 1. Initialize a New Project
+1. Initialize a new project folder (GUI dialogs).
+2. Run the CoastSat analysis pipeline.
+3. Inspect results under the output directory.
 
-```bash
-python coastsat_cli.py init
-```
-
-**What happens:**
-
-1. **Select Base Directory**
-   A folder where your new project subfolder will be created.
-
-2. **Enter Sitename**
-   A short, lowercase name (e.g. `tuk`, `patty`). This name will be used to name subfolders and prefix copied files.
-
-3. **Select AOI KML**
-   A file dialog appears (above all other windows). Select your `.kml` file. The CLI copies it to `inputs/aoi/<sitename>_aoi.kml`.
-
-4. **Select Reference Shoreline GeoJSON**
-   A file dialog appears. Select a `.geojson` of your reference shoreline. Copied to `inputs/reference/<sitename>_ref.geojson`.
-
-5. **Select Transects GeoJSON**
-   A file dialog appears. Select a `.geojson` of your transects. Copied to `inputs/transects/<sitename>_transects.geojson`.
-
-6. **Select FES2022 YAML**
-   A file dialog appears. Choose your tide‐model YAML (no copy is made). The CLI stores its **absolute path** in `settings.json`.
-
-7. **Project Structure is Created**
-
-   ```text
-   <project_root>/
-   └── <sitename>/
-       ├── inputs/
-       │   ├── aoi/
-       │   │   └── <sitename>_aoi.kml
-       │   ├── reference/
-       │   │   └── <sitename>_ref.geojson
-       │   └── transects/
-       │       └── <sitename>_transects.geojson
-       ├── outputs/
-       │   ├── shorelines/      (empty)
-       │   ├── plots/           (empty)
-       │   └── time_series/     (empty)
-       └── settings.json
-   ```
-
-8. **Summary Printed**
-   The CLI prints the final `settings.json` content, including relative paths to AOI, reference, transects, and the absolute FES YAML path.
-
----
-
-### 2. Inspect the Output Folder
+### 4.1 Initialize a Project
 
 ```bash
-python coastsat_cli.py show --config /path/to/<sitename>/settings.json
+coastsat init
 ```
 
-or
+You will be prompted to:
+
+* Select a **base directory** (system file‐browser dialog).
+* Enter a **project name** (e.g., `tuk`).
+* Select an **AOI KML** (copies it, then reads for CRS).
+* Confirm or override the **EPSG** (auto‐detected or default = 3156).
+* Select **Reference Shoreline** (GeoJSON) and **Transects** (GeoJSON).
+* Select your **FES2022 YAML** (stored as absolute path).
+* Create the **outputs/** folder.
+* A final “Run analysis now?” popup will appear.
+
+Upon completion, you’ll see:
+
+```
+<base_dir>/<sitename>/  
+├── inputs/  
+│   ├── aoi/          
+│   │   └── <sitename>_aoi.kml  
+│   ├── reference/    
+│   │   └── <sitename>_ref.geojson  
+│   ├── transects/    
+│   │   └── <sitename>_transects.geojson  
+│   └── fes_config.yaml  # absolute path stored in settings.json  
+├── outputs/  
+└── settings.json     
+```
+
+### 4.2 Run the Complete Analysis
+
+If you chose **No** at the final prompt or want to run later, type:
 
 ```bash
-python coastsat_cli.py show -c /path/to/<sitename>/settings.json
+coastsat run --config /path/to/<sitename>/settings.json
 ```
 
-* Reads `settings.json`, resolves its `output_dir`, and prints a recursive tree of `outputs/`.
-* Useful for a quick glance at which shoreline CSVs, plots, or animations have been generated.
-
-**Example:**
-
-```text
-Output directory: C:\Users\…\project\tuk\outputs
-
-outputs/
-    shorelines/
-        tuk_output_points.geojson
-        mapped_shorelines.jpg
-    plots/
-        tuk_tide_timeseries.jpg
-        0_timestep_distribution.jpg
-        …
-    time_series/
-        transect_time_series.csv
-        transect_time_series_tidally_corrected.csv
-```
-
----
-
-## Running the Complete Analysis (`Complete_Analysis.py`)
-
-Once the project is initialized (and `settings.json` exists), you run the full CoastSat pipeline with:
+Internally, this runs:
 
 ```bash
 python Complete_Analysis.py --config /path/to/<sitename>/settings.json
 ```
 
-### Script Behavior
+That executes the entire CoastSat pipeline (download, preprocess, shoreline detection, transect analysis, slope + tide correction, trend plotting, etc.).
 
-1. **Load `settings.json`**
+### 4.3 Inspect Output
 
-   * Resolves relative paths to absolute.
-   * Reads:
+After analysis finishes, files appear under:
 
-     ```json
-     {
-       "inputs": {
-         "sitename": "tuk",
-         "aoi_path": "inputs/aoi/tuk_aoi.kml",
-         "reference_shoreline": "inputs/reference/tuk_ref.geojson",
-         "transects": "inputs/transects/tuk_transects.geojson",
-         "fes_config": "C:/…/fes2022.yaml"
-       },
-       "output_dir": "outputs"
-     }
-     ```
-
-2. **`initial_settings(cfg)`**
-
-   * Reads the KML polygon, computes its bounding‐rectangle envelope.
-   * Derives a **centroid** (lon/lat) for tidal calculations.
-   * Fetches satellite metadata from GEE (via `SDS_download.retrieve_images`).
-   * Builds a `settings` dictionary with all shoreline‐extraction parameters.
-
-3. **`batch_shoreline_detection(...)`**
-
-   * Cloud‐masking, pansharpening, and object classification to extract shorelines from each satellite image.
-   * Saves preprocessed JPGs, creates animations, and writes `tuk_output_points.geojson` to `outputs/shorelines/`.
-
-4. **`shoreline_analysis(...)`**
-
-   * Loads the reference GeoJSON and transects GeoJSON.
-   * Reprojects transects to match the shoreline CRS, then computes cross‐shore distances at each acquisition date.
-   * Saves raw time‐series CSV to `outputs/time_series/transect_time_series.csv`.
-
-5. **`slope_estimation(...)`**
-
-   * Loads FES2022 handlers (from the YAML).
-   * Reprojects centroid to EPSG:4326, generates full tide series (1984–2025), and extracts tides at satellite dates.
-   * Computes power spectrum to find the dominant tide frequency.
-   * Computes per‐transect slopes, saving slope‐estimation plots in `outputs/plots/slope_estimation/`.
-
-6. **`tidal_correction(...)`**
-
-   * Applies tidal corrections to each transect’s time series.
-   * Writes `outputs/time_series/transect_time_series_tidally_corrected.csv`.
-
-7. **`calculate_and_save_trends(...)`**
-
-   * Fits linear trends to each transect’s corrected time series.
-   * Saves a GeoJSON of transects with their trend values to `outputs/shorelines/<sitename>_transects_with_trends.geojson`.
-
-8. **`improved_transects_plot(...)` + `time_series_post_processing(...)`**
-
-   * Generates final colored‐transect maps (plots), seasonal/monthly averages, and other QC figures, all saved under `outputs/plots/`.
-
-### Example Run
-
-```bash
-conda activate coastsat_env
-python Complete_Analysis.py --config C:/Users/…/project/tuk/settings.json
+```
+<base_dir>/<sitename>/outputs/
 ```
 
-* The script prints progress messages as it processes each satellite and transect.
-* At the end, you should have:
+To view the folder tree, type:
 
-  ```
-  outputs/
-      shorelines/
-          tuk_output_points.geojson
-          tuk_transects_with_trends.geojson
-      plots/
-          tuk_tide_timeseries.jpg
-          0_timestep_distribution.jpg
-          1_tides_power_spectrum.jpg
-          2_energy_curve_<transectID>.jpg
-          3_slope_spectrum_<transectID>.jpg
-          tuk_transects_colored_by_trend.jpg
-          ...
-      time_series/
-          transect_time_series.csv
-          transect_time_series_tidally_corrected.csv
-  ```
+```bash
+coastsat show --config /path/to/<sitename>/settings.json
+```
+
+You might see:
+
+```
+outputs/  
+├─ tuk_output_points.geojson  
+├─ mapped_shorelines.jpg   
+├─ plots/    
+│   ├─ tuk_tide_timeseries.jpg  
+│   ├─ 0_timestep_distribution.jpg  
+│   └─ …   
+└─ time_series/  
+    ├─ transect_time_series.csv  
+    └─ transect_time_series_tidally_corrected.csv
+```
 
 ---
 
-## Configuration File (`settings.json`)
+## CLI Commands
 
-The `settings.json` created by `coastsat_cli.py init` has this structure:
+```
+Usage: coastsat [OPTIONS] COMMAND [ARGS]...
+
+Options:
+  --help  Show this message and exit.
+
+Commands:
+  init  Create a new CoastSat project (AOI, shoreline, transects, FES).  
+  run   Run the full CoastSat analysis using your settings.json.  
+  show  Show the directory tree under the project's output folder.
+```
+
+* **`coastsat init`**: Walks you through project setup (file-browser dialogs, progress bars, and writes `settings.json`).
+* **`coastsat run --config <settings.json>`**: Executes `Complete_Analysis.py` with the given config.
+* **`coastsat show --config <settings.json>`**: Prints the folder structure of `<sitename>/outputs`.
+
+---
+
+## Settings File (settings.json)
+
+After initialization, `settings.json` looks like:
 
 ```json
 {
@@ -320,100 +212,72 @@ The `settings.json` created by `coastsat_cli.py init` has this structure:
     "aoi_path": "inputs/aoi/tuk_aoi.kml",
     "reference_shoreline": "inputs/reference/tuk_ref.geojson",
     "transects": "inputs/transects/tuk_transects.geojson",
-    "fes_config": "C:/full/path/to/fes2022.yaml"
+    "fes_config": "C:/absolute/path/to/fes2022.yaml"
   },
-  "output_dir": "outputs"
+  "output_dir": "outputs",
+  "output_epsg": 3156
 }
 ```
 
-* **`inputs.aoi_path`** (string)
-  Relative path (from `<sitename>/`) to the AOI KML.
-
-* **`inputs.reference_shoreline`** (string)
-  Relative path to the reference‐shoreline GeoJSON.
-
-* **`inputs.transects`** (string)
-  Relative path to the transects GeoJSON.
-
-* **`inputs.fes_config`** (string)
-  Absolute path to the FES2022 YAML config. (Large file—no copy.)
-
-* **`output_dir`** (string)
-  Relative path (from `<sitename>/`) to your output folder, where all generated files will be dumped.
+* **`inputs.aoi_path`**, **`reference_shoreline`**, **`transects`** are relative to the project root.
+* **`fes_config`** is stored as an absolute path.
+* **`output_dir`** is relative (usually `"outputs"`).
+* **`output_epsg`** is the EPSG code used throughout CoastSat.
 
 ---
 
-## File Explanations
+## Directory Structure
 
-* **`coastsat_cli.py`**
-
-  * A Typer‐based CLI with two commands:
-
-    1. `init`: interactively gathers all input file paths (KML, GeoJSONs, FES YAML), copies them into a defined folder structure, and writes `settings.json`.
-    2. `show`: reads an existing `settings.json` and prints the contents of its `output_dir`.
-
-* **`Complete_Analysis.py`**
-
-  * The main processing pipeline. It:
-
-    1. Loads `settings.json` via `--config`.
-    2. Builds CoastSat’s `inputs`, `settings`, and `metadata`.
-    3. Detects shorelines, runs transect intersections, computes tides with FES, corrects time series, and fits shoreline‐change trends.
-    4. Saves intermediate files (GeoJSON, CSV) and many QC/plot images.
-
-* **`requirements.txt`** (optional)
-  Lists all required packages. Installing with `pip install -r requirements.txt` ensures you have the correct versions.
-
----
-
-## Troubleshooting Tips
-
-1. **Missing Dependencies**
-
-   * If you get `ModuleNotFoundError: No module named 'numpy'` (or others), verify that your active Python interpreter is the same one where you installed packages.
-   * In VS Code, ensure your integrated terminal is using the correct Conda environment (`coastsat_env`).
-
-2. **File Dialog Hidden on Multi‐Monitor Setups**
-
-   * We set `root.attributes("-topmost", True)` and `root.lift()` in `choose_file/choose_folder` to force the dialog in front.
-   * If it still appears behind other windows, verify that your window manager respects `-topmost` on Tk.
-
-3. **All Transects Skip (“empty data”)**
-
-   * Likely a CRS mismatch between shorelines (EPSG 3156) and transects (WGS84).
-   * Confirm both are in `settings['output_epsg']` (e.g. 3156) before calling `compute_intersection_QC`.
-   * You can inspect CRSes at runtime:
-
-     ```python
-     import geopandas as gpd
-     tran_df = gpd.read_file(settings['inputs']['transects'])
-     shore_df = gpd.read_file(<path_to_shoreline_geojson>)
-     print("Transects CRS:", tran_df.crs)
-     print("Shorelines CRS:", shore_df.crs)
-     ```
-
-4. **All Tide Values = NaN**
-
-   * Ensure your FES `centroid` is in **EPSG:4326 ( longitude, latitude )** and lies in open water.
-   * Example debug:
-
-     ```python
-     lon, lat = settings['inputs']['centroid']
-     print("Tide @TestDate (lon,lat):", ocean_tide(test_date, lon, lat))
-     print("Tide @TestDate (lat,lon):", ocean_tide(test_date, lat, lon))
-     ```
-   * If returned values are still NaN, choose a new centroid inside the ocean (not on land or outside model coverage).
-
-5. **Missing or Malformed `settings.json`**
-
-   * If `show` or `Complete_Analysis.py` can’t find or parse `settings.json`, double‐check file paths and JSON formatting.
+```
+<base_dir>/<sitename>/  
+├─ inputs/        
+│   ├─ aoi/           
+│   │   └─ tuk_aoi.kml  
+│   ├─ reference/     
+│   │   └─ tuk_ref.geojson  
+│   ├─ transects/     
+│   │   └─ tuk_transects.geojson  
+│   └─ fes_config.yaml  
+├─ outputs/       
+│   ├─ tuk_output_points.geojson  
+│   ├─ mapped_shorelines.jpg  
+│   ├─ plots/    
+│   └─ time_series/  
+└─ settings.json
+```
 
 ---
 
-## Summary
+## Contributing
 
-1. **Use the CLI (`coastsat_cli.py init`)** to create a clean project structure and `settings.json`.
-2. **Run the analysis (`Complete_Analysis.py --config settings.json`)** to detect shorelines, compute transect distances, apply tide corrections, and save results.
-3. **Inspect outputs** via `coastsat_cli.py show --config settings.json` or by browsing `outputs/` directly.
+1. Fork this repository and create a branch:
 
-This README provides an end‐to‐end roadmap for setting up, running, and inspecting your CoastSat project. If you encounter any issues not covered here, consult the debug tips or create an issue in the repository.
+   ```bash
+   git checkout -b feature/your-feature
+   ```
+2. Commit your changes:
+
+   ```bash
+   git commit -m "Add new feature"
+   ```
+3. Push to your fork:
+
+   ```bash
+   git push origin feature/your-feature
+   ```
+4. Open a Pull Request with a description of your changes.
+
+Please follow the existing style:
+
+* Use `typer` for all CLI interactions.
+* Keep each function focused and concise.
+* Write clear docstrings for any new helper functions.
+* Add tests or manual-validation instructions for new features.
+
+---
+
+## License
+
+This project is released under the MIT License. See `LICENSE` for details.
+
+---
