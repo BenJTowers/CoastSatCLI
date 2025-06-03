@@ -7,6 +7,9 @@ import tkinter as tk
 from tkinter import filedialog, messagebox
 from pathlib import Path
 
+# Import EPSG selector utility
+from epsg_utils import pick_canadian_utm_epsg
+
 app = typer.Typer(
     help="CoastSat CLI: initialize projects, run analysis, and inspect outputs.",
     add_completion=False
@@ -85,7 +88,7 @@ def init():
     Step‐by‐step project initialization:
       1) Pick a base directory.
       2) Enter a project (site) name.
-      3) Enter desired output EPSG.
+      3) Auto‐select output EPSG from AOI or let user override.
       4) Prompt separately for AOI KML, reference GeoJSON, and transects GeoJSON.
       5) Copy those three inputs under a single progress bar.
       6) Prompt for FES YAML.
@@ -95,7 +98,7 @@ def init():
     typer.secho("\n=== CoastSat Project Initialization ===", fg=typer.colors.CYAN, bold=True)
     typer.echo("You will be guided through:")
     typer.echo("  • Selecting a base directory for your project")
-    typer.echo("  • Naming the project and specifying an EPSG code")
+    typer.echo("  • Naming the project and specifying an EPSG code (auto‐detected)")
     typer.echo("  • Choosing AOI, reference shoreline, transects, and FES config files")
     typer.echo("  • Creating the folder structure and writing settings.json\n")
 
@@ -110,41 +113,46 @@ def init():
         sitename = typer.prompt("  Sitename cannot be empty. Please enter a short name").strip().lower()
     typer.secho(f"  ✓ Project name set to '{sitename}'\n", fg=typer.colors.GREEN)
 
-    # 3) Ask for output EPSG (default 3156)
-    typer.echo("→ Step 3: Specify the output EPSG code (e.g., 3156).")
-    epsg_input = typer.prompt("  Output EPSG", default="3156").strip()
-    try:
-        output_epsg = int(epsg_input)
-    except ValueError:
-        typer.secho(f"  [!] '{epsg_input}' is not valid. Defaulting to EPSG 3156.", fg=typer.colors.YELLOW)
-        output_epsg = 3156
-    typer.secho(f"  ✓ Output EPSG = {output_epsg}\n", fg=typer.colors.GREEN)
-
-    # 4) Build directory paths
+    # Build directory paths
     site_dir   = os.path.join(project_dir, sitename)
     input_dir  = os.path.join(site_dir, "inputs")
     output_dir = os.path.join(site_dir, "outputs")
-    typer.echo(f"→ Step 4: Creating project folder under\n    {site_dir}")
+    typer.echo(f"→ Creating project folder under\n    {site_dir}")
     os.makedirs(site_dir, exist_ok=True)
 
-    # 5–7) Prompt separately for AOI, reference, transects
-    typer.echo("\n→ Step 5: Select your AOI KML file.")
+    # 3) Prompt for AOI first, to auto-detect EPSG
+    typer.echo("\n→ Step 3: Select your AOI KML file (for EPSG auto‐detection).")
     typer.echo("   (A file browser will open shortly.)")
     aoi_src = choose_file("Select AOI KML", filetypes=[("KML files", "*.kml")])
-    aoi_dest = os.path.join(input_dir, "aoi", f"{sitename}_aoi.kml")
+    # Auto‐select EPSG
+    try:
+        auto_epsg = pick_canadian_utm_epsg(aoi_src)
+        typer.secho(f"  ✓ Detected EPSG = {auto_epsg} from AOI centroid", fg=typer.colors.GREEN)
+    except Exception as e:
+        typer.secho(f"  [!] Could not auto-select EPSG: {e}", fg=typer.colors.RED)
+        if not typer.confirm("Do you want to specify an EPSG manually?"):
+            raise typer.Exit()
+        epsg_input = typer.prompt("  Enter EPSG code manually", default="3156").strip()
+        try:
+            auto_epsg = int(epsg_input)
+        except ValueError:
+            typer.secho("Invalid EPSG → exiting", fg=typer.colors.RED)
+            raise typer.Exit()
 
-    typer.echo("\n→ Step 6: Select your reference shoreline GeoJSON.")
+    # 4) Prompt separately for reference and transects (AOI copy next)
+    aoi_dest = os.path.join(input_dir, "aoi", f"{sitename}_aoi.kml")
+    typer.echo("\n→ Step 4: Select your reference shoreline GeoJSON.")
     typer.echo("   (A file browser will open shortly.)")
     ref_src = choose_file("Select reference shoreline", filetypes=[("GeoJSON files", "*.geojson")])
     ref_dest = os.path.join(input_dir, "reference", f"{sitename}_ref.geojson")
 
-    typer.echo("\n→ Step 7: Select your transects GeoJSON.")
+    typer.echo("\n→ Step 5: Select your transects GeoJSON.")
     typer.echo("   (A file browser will open shortly.)")
     transects_src = choose_file("Select transects file", filetypes=[("GeoJSON files", "*.geojson")])
     transects_dest = os.path.join(input_dir, "transects", f"{sitename}_transects.geojson")
 
-    # 5–7) Copy all three under one progress bar
-    typer.echo("\n→ Step 5–7: Copying input files under progress bar…")
+    # 5–6) Copy all three under one progress bar
+    typer.echo("\n→ Copying input files under progress bar…")
     from typer import progressbar
     input_tasks = [
         (aoi_src, aoi_dest, "AOI KML"),
@@ -157,19 +165,19 @@ def init():
             shutil.copy2(src, dest)
             typer.secho(f"  ✓ Copied {label} to {dest}", fg=typer.colors.GREEN)
 
-    # 8) Prompt for FES YAML (no copy)
-    typer.echo("\n→ Step 8: Select your FES2022 YAML configuration (no copy will be made).")
+    # 7) Prompt for FES YAML (no copy)
+    typer.echo("\n→ Step 6: Select your FES2022 YAML configuration (no copy will be made).")
     typer.echo("   (A file browser will open shortly.)")
     fes_config_path = choose_file("Select FES2022 YAML file", filetypes=[("YAML files", "*.yaml;*.yml")])
     typer.secho(f"  ✓ FES2022 config set to {fes_config_path}\n", fg=typer.colors.GREEN)
 
-    # 9) Create main output directory only
-    typer.echo("→ Step 9: Creating main output directory")
+    # 8) Create main output directory only
+    typer.echo("→ Step 7: Creating main output directory")
     os.makedirs(output_dir, exist_ok=True)
     typer.secho("  ✓ Main output folder created\n", fg=typer.colors.GREEN)
 
-    # 10) Build settings.json
-    typer.echo("→ Step 10: Writing settings.json")
+    # 9) Build settings.json
+    typer.echo("→ Step 8: Writing settings.json")
     settings = {
         "inputs": {
             "sitename": sitename,
@@ -179,7 +187,7 @@ def init():
             "fes_config": fes_config_path
         },
         "output_dir": os.path.relpath(output_dir, start=site_dir),
-        "output_epsg": output_epsg
+        "output_epsg": auto_epsg
     }
 
     settings_path = os.path.join(site_dir, "settings.json")
@@ -189,14 +197,14 @@ def init():
 
     typer.secho("\n✅ Project initialized successfully!\n", fg=typer.colors.CYAN, bold=True)
     typer.echo(f"  • Sitename           : {sitename}")
-    typer.echo(f"  • Output EPSG        : {output_epsg}")
-    typer.echo(f"  • AOI (rel. path)     : {settings['inputs']['aoi_path']}")
-    typer.echo(f"  • Reference GeoJSON   : {settings['inputs']['reference_shoreline']}")
-    typer.echo(f"  • Transects GeoJSON   : {settings['inputs']['transects']}")
+    typer.echo(f"  • Output EPSG       : {auto_epsg}")
+    typer.echo(f"  • AOI (rel. path)    : {settings['inputs']['aoi_path']}")
+    typer.echo(f"  • Reference GeoJSON  : {settings['inputs']['reference_shoreline']}")
+    typer.echo(f"  • Transects GeoJSON  : {settings['inputs']['transects']}")
     typer.echo(f"  • FES YAML (abs. path): {settings['inputs']['fes_config']}")
-    typer.echo(f"  • Output directory    : {settings['output_dir']}\n")
+    typer.echo(f"  • Output directory   : {settings['output_dir']}\n")
 
-    # 11) Ask user if they want to run analysis immediately
+    # 10) Ask user if they want to run analysis immediately
     typer.echo("→ Would you like to begin the full analysis now?")
     root_msg = tk.Tk()
     root_msg.withdraw()
@@ -258,8 +266,6 @@ def show(
         help="Path to your project’s settings.json"
     )
 ):
-    from pathlib import Path
-
     cfg_path = Path(config).expanduser().resolve()
     if not cfg_path.exists():
         typer.secho(f"ERROR: Cannot find config file at {cfg_path}", fg=typer.colors.RED)
