@@ -14,6 +14,7 @@
 *.csv
 *.xml
 .env
+test_rstb.py
 /deprecated
 /worked_example
 /.virtual_documents
