@@ -4,10 +4,10 @@ import shutil
 import subprocess
 import typer
 import tkinter as tk
+import geopandas as gpd
 from tkinter import filedialog, messagebox
 from pathlib import Path
-
-# Import EPSG selector utility
+from reference_shoreline_and_transect_builder import clip_shoreline_to_aoi, generate_transects_along_line
 from epsg_utils import pick_canadian_utm_epsg
 
 app = typer.Typer(
@@ -139,31 +139,60 @@ def init():
             typer.secho("Invalid EPSG → exiting", fg=typer.colors.RED)
             raise typer.Exit()
 
-    # 4) Prompt separately for reference and transects (AOI copy next)
+    # # 4) Prompt separately for reference and transects (AOI copy next)
+    # aoi_dest = os.path.join(input_dir, "aoi", f"{sitename}_aoi.kml")
+    # typer.echo("\n→ Step 4: Select your reference shoreline GeoJSON.")
+    # typer.echo("   (A file browser will open shortly.)")
+    # ref_src = choose_file("Select reference shoreline", filetypes=[("GeoJSON files", "*.geojson")])
+    # ref_dest = os.path.join(input_dir, "reference", f"{sitename}_ref.geojson")
+
+    # typer.echo("\n→ Step 5: Select your transects GeoJSON.")
+    # typer.echo("   (A file browser will open shortly.)")
+    # transects_src = choose_file("Select transects file", filetypes=[("GeoJSON files", "*.geojson")])
+    # transects_dest = os.path.join(input_dir, "transects", f"{sitename}_transects.geojson")
+
+    # # 5–6) Copy all three under one progress bar
+    # typer.echo("\n→ Copying input files under progress bar…")
+    # from typer import progressbar
+    # input_tasks = [
+    #     (aoi_src, aoi_dest, "AOI KML"),
+    #     (ref_src, ref_dest, "Reference shoreline GeoJSON"),
+    #     (transects_src, transects_dest, "Transects GeoJSON")
+    # ]
+    # with progressbar(input_tasks, label="Copying files") as tasks:
+    #     for src, dest, label in tasks:
+    #         os.makedirs(os.path.dirname(dest), exist_ok=True)
+    #         shutil.copy2(src, dest)
+    #         typer.secho(f"  ✓ Copied {label} to {dest}", fg=typer.colors.GREEN)
+
+    typer.echo("\n→ Step 4: Select your full shoreline file (GeoJSON or Shapefile).")
+    shoreline_src = choose_file("Select shoreline file", filetypes=[("Shapefiles", "*.shp"), ("GeoJSON", "*.geojson")])
+
+    typer.echo("→ Loading AOI and shoreline data…")
+    shoreline_gdf = gpd.read_file(shoreline_src)
+    aoi_gdf = gpd.read_file(aoi_src, driver="KML")
+
+    typer.echo("→ Clipping shoreline to AOI…")
+    reference_gdf = clip_shoreline_to_aoi(shoreline_gdf, aoi_gdf)
+    ref_out_path = os.path.join(input_dir, "reference", f"{sitename}_ref.geojson")
+    os.makedirs(os.path.dirname(ref_out_path), exist_ok=True)
+    reference_gdf.to_file(ref_out_path, driver="GeoJSON")
+    typer.secho(f"  ✓ Reference shoreline saved to {ref_out_path}", fg=typer.colors.GREEN)
+
+    typer.echo("→ Generating transects from clipped shoreline…")
+    reference_projected = reference_gdf.to_crs(epsg=auto_epsg)
+    transects_gdf = generate_transects_along_line(reference_projected, spacing=100, length=200, offset_ratio=0.25)
+    transects_out_path = os.path.join(input_dir, "transects", f"{sitename}_transects.geojson")
+    os.makedirs(os.path.dirname(transects_out_path), exist_ok=True)
+    transects_gdf.to_file(transects_out_path, driver="GeoJSON")
+    typer.secho(f"  ✓ Transects saved to {transects_out_path}", fg=typer.colors.GREEN)
+
+    typer.echo("→ Copying AOI to project input folder…")
     aoi_dest = os.path.join(input_dir, "aoi", f"{sitename}_aoi.kml")
-    typer.echo("\n→ Step 4: Select your reference shoreline GeoJSON.")
-    typer.echo("   (A file browser will open shortly.)")
-    ref_src = choose_file("Select reference shoreline", filetypes=[("GeoJSON files", "*.geojson")])
-    ref_dest = os.path.join(input_dir, "reference", f"{sitename}_ref.geojson")
+    os.makedirs(os.path.dirname(aoi_dest), exist_ok=True)
+    shutil.copy2(aoi_src, aoi_dest)
+    typer.secho(f"  ✓ AOI copied to {aoi_dest}", fg=typer.colors.GREEN)
 
-    typer.echo("\n→ Step 5: Select your transects GeoJSON.")
-    typer.echo("   (A file browser will open shortly.)")
-    transects_src = choose_file("Select transects file", filetypes=[("GeoJSON files", "*.geojson")])
-    transects_dest = os.path.join(input_dir, "transects", f"{sitename}_transects.geojson")
-
-    # 5–6) Copy all three under one progress bar
-    typer.echo("\n→ Copying input files under progress bar…")
-    from typer import progressbar
-    input_tasks = [
-        (aoi_src, aoi_dest, "AOI KML"),
-        (ref_src, ref_dest, "Reference shoreline GeoJSON"),
-        (transects_src, transects_dest, "Transects GeoJSON")
-    ]
-    with progressbar(input_tasks, label="Copying files") as tasks:
-        for src, dest, label in tasks:
-            os.makedirs(os.path.dirname(dest), exist_ok=True)
-            shutil.copy2(src, dest)
-            typer.secho(f"  ✓ Copied {label} to {dest}", fg=typer.colors.GREEN)
 
     # 7) Prompt for FES YAML (no copy)
     typer.echo("\n→ Step 6: Select your FES2022 YAML configuration (no copy will be made).")
@@ -182,8 +211,8 @@ def init():
         "inputs": {
             "sitename": sitename,
             "aoi_path": os.path.relpath(aoi_dest, start=site_dir),
-            "reference_shoreline": os.path.relpath(ref_dest, start=site_dir),
-            "transects": os.path.relpath(transects_dest, start=site_dir),
+            "reference_shoreline": os.path.relpath(ref_out_path, start=site_dir),
+            "transects": os.path.relpath(transects_out_path, start=site_dir),
             "fes_config": fes_config_path
         },
         "output_dir": os.path.relpath(output_dir, start=site_dir),

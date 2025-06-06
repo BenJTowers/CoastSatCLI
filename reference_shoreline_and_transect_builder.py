@@ -11,7 +11,7 @@ def clip_shoreline_to_aoi(shoreline_gdf: gpd.GeoDataFrame, aoi_gdf: gpd.GeoDataF
     return gpd.overlay(shoreline_gdf, aoi_gdf, how='intersection')
 
 
-def generate_transects_along_line(clipped_gdf: gpd.GeoDataFrame, spacing=50, length=200, offset_ratio=0.5) -> gpd.GeoDataFrame:
+def generate_transects_along_line(clipped_gdf: gpd.GeoDataFrame, spacing=50, length=200, offset_ratio=0.5, skip_threshold=300.0) -> gpd.GeoDataFrame:
     """Generate perpendicular transects at fixed spacing along the dissolved shoreline.
 
     offset_ratio: proportion of transect extending inland (e.g., 0.25 = 25% inland, 75% seaward)
@@ -32,10 +32,15 @@ def generate_transects_along_line(clipped_gdf: gpd.GeoDataFrame, spacing=50, len
     # Generate transects across all lines
     for line in lines:
         total_length = line.length
+
+        # Skip short lines below threshold (e.g., small islands)
+        if total_length < skip_threshold:
+            continue
+
         dist = 0
         while dist <= total_length:
             point = line.interpolate(dist)
-            normal = _get_normal(line, dist, window=100.0)
+            normal = _get_normal(line, dist, window=200.0)
             if np.linalg.norm(normal) == 0:
                 dist += spacing
                 continue
@@ -44,13 +49,13 @@ def generate_transects_along_line(clipped_gdf: gpd.GeoDataFrame, spacing=50, len
             seaward = (1 - offset_ratio) * length
             p1 = (point.x - normal[0] * inland, point.y - normal[1] * inland)
             p2 = (point.x + normal[0] * seaward, point.y + normal[1] * seaward)
-            transects.append(LineString([p1, p2]))
+            transects.append(LineString([p2, p1]))  # origin = land side now
             dist += spacing
 
     return gpd.GeoDataFrame(geometry=transects, crs=clipped_gdf.crs)
 
 
-def _get_normal(line: LineString, distance: float, window: float = 100.0):
+def _get_normal(line: LineString, distance: float, window: float = 200.0):
     """Calculate a unit normal vector averaged over a larger window to smooth out local irregularities."""
     half_window = window / 2
     start = max(distance - half_window, 0)
