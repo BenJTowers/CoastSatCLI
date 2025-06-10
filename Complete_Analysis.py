@@ -84,7 +84,7 @@ def initial_settings(config):
     rect_shape = Polygon(polygon[0])
 
     # compute its centroid:
-    centroid = [rect_shape.centroid.x, rect_shape.centroid.y]
+    centroid = [rect_shape.centroid.x, rect_shape.centroid.y] #doesn't quite work
 
 
     # Date range
