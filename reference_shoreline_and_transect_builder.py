@@ -17,6 +17,7 @@ def generate_transects_along_line(clipped_gdf: gpd.GeoDataFrame, spacing=50, len
     offset_ratio: proportion of transect extending inland (e.g., 0.25 = 25% inland, 75% seaward)
     """
     transects = []
+    names = []
 
     # Dissolve all shoreline features into connected lines
     merged = linemerge(clipped_gdf.unary_union)
@@ -28,6 +29,8 @@ def generate_transects_along_line(clipped_gdf: gpd.GeoDataFrame, spacing=50, len
         lines = [merged]
     else:
         return gpd.GeoDataFrame(geometry=transects, crs=clipped_gdf.crs)
+
+    transect_id = 1  # Start naming from 1
 
     # Generate transects across all lines
     for line in lines:
@@ -44,15 +47,20 @@ def generate_transects_along_line(clipped_gdf: gpd.GeoDataFrame, spacing=50, len
             if np.linalg.norm(normal) == 0:
                 dist += spacing
                 continue
+
             # Calculate points based on offset ratio
             inland = offset_ratio * length
             seaward = (1 - offset_ratio) * length
             p1 = (point.x - normal[0] * inland, point.y - normal[1] * inland)
             p2 = (point.x + normal[0] * seaward, point.y + normal[1] * seaward)
             transects.append(LineString([p2, p1]))  # origin = land side now
+            names.append(f"transect_{transect_id:03d}")  # Zero-padded names
+            transect_id += 1
+
             dist += spacing
 
-    return gpd.GeoDataFrame(geometry=transects, crs=clipped_gdf.crs)
+    return gpd.GeoDataFrame({'name': names, 'geometry': transects}, crs=clipped_gdf.crs)
+
 
 
 def _get_normal(line: LineString, distance: float, window: float = 200.0):
