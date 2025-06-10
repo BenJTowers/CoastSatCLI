@@ -9,6 +9,7 @@ from tkinter import filedialog, messagebox
 from pathlib import Path
 from reference_shoreline_and_transect_builder import clip_shoreline_to_aoi, generate_transects_along_line
 from epsg_utils import pick_canadian_utm_epsg
+from site_initialize import initialize_single_site
 
 app = typer.Typer(
     help="CoastSat CLI: initialize projects, run analysis, and inspect outputs.",
@@ -66,6 +67,26 @@ def choose_folder(title: str = "Select a folder") -> str:
         if not typer.confirm("No folder was selected. Would you like to try again?"):
             typer.secho("  ⚠️  Operation cancelled by user.", fg=typer.colors.YELLOW)
             raise typer.Exit()
+        
+def choose_file_multiple(title: str = "Select AOI file(s)") -> list[str]:
+    while True:
+        root = tk.Tk()
+        root.withdraw()
+        root.attributes("-topmost", True)
+        root.lift()
+        root.update()
+        filepaths = filedialog.askopenfilenames(title=title, filetypes=[("KML files", "*.kml")])
+        root.destroy()
+
+        if filepaths:
+            typer.secho("  ✓ You selected:", fg=typer.colors.GREEN)
+            for fp in filepaths:
+                typer.echo(f"     • {fp}")
+            return list(filepaths)
+
+        if not typer.confirm("No files were selected. Would you like to try again?"):
+            typer.secho("  ⚠️  Operation cancelled by user.", fg=typer.colors.YELLOW)
+            raise typer.Exit()
 
 
 def copy_and_rename(src_path: str, dest_folder: str, new_name: str) -> str:
@@ -77,6 +98,39 @@ def copy_and_rename(src_path: str, dest_folder: str, new_name: str) -> str:
     dest_path = os.path.join(dest_folder, new_name)
     shutil.copy2(src_path, dest_path)
     return dest_path
+
+def prompt_and_run_analysis(settings_paths: list[str]):
+    """
+    Prompts user to run analysis on the provided list of settings.json paths.
+    Handles both single and batch site cases.
+    """
+    typer.echo("\n→ Would you like to begin the full analysis now?")
+    root_msg = tk.Tk()
+    root_msg.withdraw()
+    root_msg.attributes("-topmost", True)
+    run_now = messagebox.askyesno(
+        "Run Analysis",
+        f"{len(settings_paths)} project(s) initialized. Begin analysis now?"
+    )
+    root_msg.destroy()
+
+    if not run_now:
+        typer.secho("  ⚠️  Analysis skipped by user.", fg=typer.colors.YELLOW)
+        return
+
+    for settings_path in settings_paths:
+        sitename = Path(settings_path).parent.name
+        cmd = [
+            "python",
+            "Complete_Analysis.py",
+            "--config", str(settings_path)
+        ]
+        typer.echo(f"\n→ Running analysis for {sitename}: {' '.join(cmd)}")
+        result = subprocess.run(cmd)
+        if result.returncode == 0:
+            typer.secho(f"  ✓ {sitename} completed successfully!", fg=typer.colors.GREEN)
+        else:
+            typer.secho(f"  ❌ {sitename} failed with exit code {result.returncode}.", fg=typer.colors.RED)
 
 
 @app.command(
@@ -98,141 +152,90 @@ def init():
     typer.secho("\n=== CoastSat Project Initialization ===", fg=typer.colors.CYAN, bold=True)
     typer.echo("You will be guided through:")
     typer.echo("  • Selecting a base directory for your project")
-    typer.echo("  • Naming the project and specifying an EPSG code (auto‐detected)")
-    typer.echo("  • Choosing AOI, reference shoreline, transects, and FES config files")
-    typer.echo("  • Creating the folder structure and writing settings.json\n")
+    typer.echo("  • Naming the project)")
+    typer.echo("  • Choosing AOI's")
+    typer.echo("  • Creating the folder structure and writing a settings.json\n")
 
     # 1) Select project folder
     typer.echo("→ Step 1: Choose the base directory where your new project will live.")
     project_dir = choose_folder("Choose base project directory")
 
     # 2) Ask for sitename
-    typer.echo("\n→ Step 2: Enter a short project (site) name (e.g., tuk, patty).")
+    typer.echo("\n→ Step 2: Enter a project (site) name (e.g., tuk, patty).")
     sitename = typer.prompt("  Sitename").strip().lower()
     while not sitename:
         sitename = typer.prompt("  Sitename cannot be empty. Please enter a short name").strip().lower()
     typer.secho(f"  ✓ Project name set to '{sitename}'\n", fg=typer.colors.GREEN)
 
-    # Build directory paths
-    site_dir   = os.path.join(project_dir, sitename)
-    input_dir  = os.path.join(site_dir, "inputs")
-    output_dir = os.path.join(site_dir, "outputs")
-    typer.echo(f"→ Creating project folder under\n    {site_dir}")
-    os.makedirs(site_dir, exist_ok=True)
-
-    # 3) Prompt for AOI first, to auto-detect EPSG
-    typer.echo("\n→ Step 3: Select your AOI KML file (for EPSG auto‐detection).")
-    typer.echo("   (A file browser will open shortly.)")
-    aoi_src = choose_file("Select AOI KML", filetypes=[("KML files", "*.kml")])
-    # Auto‐select EPSG
-    try:
-        auto_epsg = pick_canadian_utm_epsg(aoi_src)
-        typer.secho(f"  ✓ Detected EPSG = {auto_epsg} from AOI centroid", fg=typer.colors.GREEN)
-    except Exception as e:
-        typer.secho(f"  [!] Could not auto-select EPSG: {e}", fg=typer.colors.RED)
-        if not typer.confirm("Do you want to specify an EPSG manually?"):
-            raise typer.Exit()
-        epsg_input = typer.prompt("  Enter EPSG code manually", default="3156").strip()
-        try:
-            auto_epsg = int(epsg_input)
-        except ValueError:
-            typer.secho("Invalid EPSG → exiting", fg=typer.colors.RED)
-            raise typer.Exit()
-
-    # 4) select large coastline that includes AOI
-    typer.echo("\n→ Step 4: Select your full shoreline file (GeoJSON or Shapefile).")
+    # 3) select large coastline that includes AOI
+    typer.echo("\n→ Step 3: Select your full shoreline file (GeoJSON or Shapefile).")
     shoreline_src = choose_file("Select shoreline file", filetypes=[("Shapefiles", "*.shp"), ("GeoJSON", "*.geojson")])
 
-    typer.echo("→ Loading AOI and shoreline data…")
-    shoreline_gdf = gpd.read_file(shoreline_src)
-    aoi_gdf = gpd.read_file(aoi_src, driver="KML")
+    # 4) load shoreline data
+    typer.echo("→ Loading shoreline data (this may take a few minutes)…")
+    try:
+        shoreline_gdf = gpd.read_file(shoreline_src)
+    except Exception as e:
+        typer.secho(f"❌ Failed to read shoreline file: {e}", fg=typer.colors.RED)
+        raise typer.Exit()
 
-    # 5) create reference shoreline GeoJSON
-    typer.echo("→ Clipping shoreline to AOI…")
-    reference_gdf = clip_shoreline_to_aoi(shoreline_gdf, aoi_gdf)
-    ref_out_path = os.path.join(input_dir, "reference", f"{sitename}_ref.geojson")
-    os.makedirs(os.path.dirname(ref_out_path), exist_ok=True)
-    reference_gdf.to_file(ref_out_path, driver="GeoJSON")
-    typer.secho(f"  ✓ Reference shoreline saved to {ref_out_path}", fg=typer.colors.GREEN)
-
-    # 6) generate transects GeoJSON
-    typer.echo("→ Generating transects from clipped shoreline…")
-    reference_projected = reference_gdf.to_crs(epsg=auto_epsg)
-    transects_gdf = generate_transects_along_line(reference_projected, spacing=100, length=200, offset_ratio=0.25)
-    transects_out_path = os.path.join(input_dir, "transects", f"{sitename}_transects.geojson")
-    os.makedirs(os.path.dirname(transects_out_path), exist_ok=True)
-    transects_gdf.to_file(transects_out_path, driver="GeoJSON")
-    typer.secho(f"  ✓ Transects saved to {transects_out_path}", fg=typer.colors.GREEN)
-
-    typer.echo("→ Copying AOI to project input folder…")
-    aoi_dest = os.path.join(input_dir, "aoi", f"{sitename}_aoi.kml")
-    os.makedirs(os.path.dirname(aoi_dest), exist_ok=True)
-    shutil.copy2(aoi_src, aoi_dest)
-    typer.secho(f"  ✓ AOI copied to {aoi_dest}", fg=typer.colors.GREEN)
-
-
-    # 7) Prompt for FES YAML (no copy)
-    typer.echo("\n→ Step 6: Select your FES2022 YAML configuration (no copy will be made).")
-    typer.echo("   (A file browser will open shortly.)")
+    # 5) Prompt for FES YAML (no copy)
+    typer.echo("\n→ Step 4: Select your FES2022 YAML configuration (no copy will be made).")
     fes_config_path = choose_file("Select FES2022 YAML file", filetypes=[("YAML files", "*.yaml;*.yml")])
     typer.secho(f"  ✓ FES2022 config set to {fes_config_path}\n", fg=typer.colors.GREEN)
 
-    # 8) Create main output directory only
-    typer.echo("→ Step 7: Creating main output directory")
-    os.makedirs(output_dir, exist_ok=True)
-    typer.secho("  ✓ Main output folder created\n", fg=typer.colors.GREEN)
+    is_batch = typer.confirm("Would you like to initialize multiple AOIs as a batch?", default=False)
 
-    # 9) Build settings.json
-    typer.echo("→ Step 8: Writing settings.json")
-    settings = {
-        "inputs": {
-            "sitename": sitename,
-            "aoi_path": os.path.relpath(aoi_dest, start=site_dir),
-            "reference_shoreline": os.path.relpath(ref_out_path, start=site_dir),
-            "transects": os.path.relpath(transects_out_path, start=site_dir),
-            "fes_config": fes_config_path
-        },
-        "output_dir": os.path.relpath(output_dir, start=site_dir),
-        "output_epsg": auto_epsg
-    }
+    if is_batch:
+        # 6) Prompt for multiple AOI KML files
+        typer.echo("\n→ Step 5: Select your AOI KML files.")
+        aoi_srcs = choose_file_multiple("Select AOI KML files")
+        
+        settings_paths = []
+        for i, aoi_src in enumerate(aoi_srcs):
+            full_sitename = f"{sitename}_{str(i+1).zfill(3)}"
+            typer.secho(f"\nInitializing AOI {i+1} of {len(aoi_srcs)}: {full_sitename}", fg=typer.colors.CYAN, bold=True)
+            site_info = initialize_single_site(
+                aoi_path=aoi_src,
+                sitename=full_sitename,
+                shoreline_path=shoreline_src,
+                fes_config_path=fes_config_path,
+                base_dir=project_dir,
+                preloaded_shoreline=shoreline_gdf
+            )
+            settings_paths.append(site_info['settings_path'])
 
-    settings_path = os.path.join(site_dir, "settings.json")
-    with open(settings_path, "w") as f:
-        json.dump(settings, f, indent=4)
-    typer.secho("  ✓ settings.json created\n", fg=typer.colors.GREEN)
+        
+        typer.secho("\n✅ All AOIs initialized successfully!\n", fg=typer.colors.CYAN, bold=True)
+        typer.secho("\n📦 Batch Initialization Summary:", fg=typer.colors.CYAN, bold=True)
+        for i, settings_path in enumerate(settings_paths):
+            sitename = Path(settings_path).parent.name
+            output_dir = Path(settings_path).parent / "outputs"
+            typer.echo(f"  • {sitename:<12} → {output_dir}")
 
-    typer.secho("\n✅ Project initialized successfully!\n", fg=typer.colors.CYAN, bold=True)
-    typer.echo(f"  • Sitename           : {sitename}")
-    typer.echo(f"  • Output EPSG       : {auto_epsg}")
-    typer.echo(f"  • AOI (rel. path)    : {settings['inputs']['aoi_path']}")
-    typer.echo(f"  • Reference GeoJSON  : {settings['inputs']['reference_shoreline']}")
-    typer.echo(f"  • Transects GeoJSON  : {settings['inputs']['transects']}")
-    typer.echo(f"  • FES YAML (abs. path): {settings['inputs']['fes_config']}")
-    typer.echo(f"  • Output directory   : {settings['output_dir']}\n")
+        # 7) Run analysis immediately
+        prompt_and_run_analysis(settings_paths)
 
-    # 10) Ask user if they want to run analysis immediately
-    typer.echo("→ Would you like to begin the full analysis now?")
-    root_msg = tk.Tk()
-    root_msg.withdraw()
-    root_msg.attributes("-topmost", True)
-    run_now = messagebox.askyesno(
-        "Run Analysis",
-        "settings.json created. Begin analysis now?"
-    )
-    root_msg.destroy()
+    else:
+        # 6) Prompt for single AOI KML file
+        typer.echo("\n→ Step 5: Select your AOI KML file.")
+        aoi_src = choose_file("Select AOI KML", filetypes=[("KML files", "*.kml")])
+        
+        # Initialize single site
+        site_info = initialize_single_site(
+            aoi_path=aoi_src,
+            sitename=sitename,
+            shoreline_path=shoreline_src,
+            fes_config_path=fes_config_path,
+            base_dir=project_dir,
+            preloaded_shoreline=shoreline_gdf
+        )
 
-    if run_now:
-        cmd = [
-            "python",
-            "Complete_Analysis.py",
-            "--config", str(settings_path)
-        ]
-        typer.echo(f"\n→ Running analysis: {' '.join(cmd)}")
-        result = subprocess.run(cmd)
-        if result.returncode == 0:
-            typer.secho("\n✅ Analysis completed successfully!", fg=typer.colors.GREEN)
-        else:
-            typer.secho(f"\n❌ Analysis failed with exit code {result.returncode}.", fg=typer.colors.RED)
+        typer.secho("\n✅ Project initialized successfully!\n", fg=typer.colors.CYAN, bold=True)
+
+        # 7) Run analysis immediately
+        prompt_and_run_analysis([site_info['settings_path']])
+
 
 
 @app.command("run", help="Run the full CoastSat analysis using your settings.json.")
