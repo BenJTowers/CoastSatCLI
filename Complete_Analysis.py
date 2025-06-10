@@ -57,7 +57,7 @@ def load_settings(config_path):
     for key in ('aoi_path', 'reference_shoreline', 'transects'):
         if key in inputs_config:
             inputs_config[key] = str((base_dir / inputs_config[key]).resolve())
-    # FES2022 YAML: absolute, no copy
+    # FES2022 YAML: absolute path
     if 'fes_config' in inputs_config:
         inputs_config['fes_config'] = str(Path(inputs_config['fes_config']).expanduser().resolve())
     
@@ -144,8 +144,6 @@ def initial_settings(config):
         # Add the inputs defined previously
         'inputs': inputs,
     }
-
-    print("DEBUG: epsg loaded:" , settings['output_epsg'])
 
     return inputs, settings, metadata
 
@@ -311,27 +309,10 @@ def shoreline_analysis(output, settings):
         'auto_prc': 0.1,  # Percentage to use in 'auto' mode to switch from 'nan' to 'max'
     }
 
-    # # 1) Load transects and print their CRS
-    # transect_gdf = gpd.read_file(settings['inputs']['transect_geojson'])
-    # print("DEBUG: Transects CRS →", transect_gdf.crs)
-
-
-    # shoreline_gdf = gpd.read_file(settings['reference_shoreline'])
-    # print("DEBUG: Shorelines CRS →", shoreline_gdf.crs)
     
     cross_distance = SDS_transects.compute_intersection_QC(
         output, transects, settings_transects
     )
-
-    print("DEBUG: raw cross_distance stats:")
-    print("  # shorelines mapped:", len(output['shorelines']))
-    print("  # dates available  :", len(output['dates']))
-    print("  # transects        :", len(transects))
-    for key in list(cross_distance.keys())[:5]:  # first 5 transects
-        arr = np.asarray(cross_distance[key])
-        valid = np.count_nonzero(~np.isnan(arr))
-        print(f"    transect {key}: length {arr.shape[0]}, valid pts {valid}")
-    print("  …")
 
     # Plot the time-series of cross-shore shoreline change
     if settings.get('save_figure', False):

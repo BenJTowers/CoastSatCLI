@@ -139,32 +139,7 @@ def init():
             typer.secho("Invalid EPSG → exiting", fg=typer.colors.RED)
             raise typer.Exit()
 
-    # # 4) Prompt separately for reference and transects (AOI copy next)
-    # aoi_dest = os.path.join(input_dir, "aoi", f"{sitename}_aoi.kml")
-    # typer.echo("\n→ Step 4: Select your reference shoreline GeoJSON.")
-    # typer.echo("   (A file browser will open shortly.)")
-    # ref_src = choose_file("Select reference shoreline", filetypes=[("GeoJSON files", "*.geojson")])
-    # ref_dest = os.path.join(input_dir, "reference", f"{sitename}_ref.geojson")
-
-    # typer.echo("\n→ Step 5: Select your transects GeoJSON.")
-    # typer.echo("   (A file browser will open shortly.)")
-    # transects_src = choose_file("Select transects file", filetypes=[("GeoJSON files", "*.geojson")])
-    # transects_dest = os.path.join(input_dir, "transects", f"{sitename}_transects.geojson")
-
-    # # 5–6) Copy all three under one progress bar
-    # typer.echo("\n→ Copying input files under progress bar…")
-    # from typer import progressbar
-    # input_tasks = [
-    #     (aoi_src, aoi_dest, "AOI KML"),
-    #     (ref_src, ref_dest, "Reference shoreline GeoJSON"),
-    #     (transects_src, transects_dest, "Transects GeoJSON")
-    # ]
-    # with progressbar(input_tasks, label="Copying files") as tasks:
-    #     for src, dest, label in tasks:
-    #         os.makedirs(os.path.dirname(dest), exist_ok=True)
-    #         shutil.copy2(src, dest)
-    #         typer.secho(f"  ✓ Copied {label} to {dest}", fg=typer.colors.GREEN)
-
+    # 4) select large coastline that includes AOI
     typer.echo("\n→ Step 4: Select your full shoreline file (GeoJSON or Shapefile).")
     shoreline_src = choose_file("Select shoreline file", filetypes=[("Shapefiles", "*.shp"), ("GeoJSON", "*.geojson")])
 
@@ -172,6 +147,7 @@ def init():
     shoreline_gdf = gpd.read_file(shoreline_src)
     aoi_gdf = gpd.read_file(aoi_src, driver="KML")
 
+    # 5) create reference shoreline GeoJSON
     typer.echo("→ Clipping shoreline to AOI…")
     reference_gdf = clip_shoreline_to_aoi(shoreline_gdf, aoi_gdf)
     ref_out_path = os.path.join(input_dir, "reference", f"{sitename}_ref.geojson")
@@ -179,6 +155,7 @@ def init():
     reference_gdf.to_file(ref_out_path, driver="GeoJSON")
     typer.secho(f"  ✓ Reference shoreline saved to {ref_out_path}", fg=typer.colors.GREEN)
 
+    # 6) generate transects GeoJSON
     typer.echo("→ Generating transects from clipped shoreline…")
     reference_projected = reference_gdf.to_crs(epsg=auto_epsg)
     transects_gdf = generate_transects_along_line(reference_projected, spacing=100, length=200, offset_ratio=0.25)
