@@ -10,7 +10,6 @@ import os
 import numpy as np
 import matplotlib.pyplot as plt
 import pdb
-import time
 
 # image processing modules
 import skimage.filters as filters
@@ -96,22 +95,18 @@ def extract_shorelines(metadata, settings):
     # initialise output structure
     output = dict([])
     # create a subfolder to store the .jpg images showing the detection
-    filepath_jpg = os.path.join(filepath_data, sitename, 'jpg_files', 'detection')
+    filepath_jpg = os.path.join(filepath_data, 'jpg_files', 'detection')
     if not os.path.exists(filepath_jpg):
             os.makedirs(filepath_jpg)
     # close all open figures
     plt.close('all')
 
     print('Mapping shorelines:')
-
-    overall_start = time.time()
     
     default_min_length_sl = settings['min_length_sl']
     # loop through satellite list
     for satname in metadata.keys():
 
-        print(f"\n[Timing] Starting satellite: {satname}")
-        sat_start = time.time()
 
         # get images
         filepath = SDS_tools.get_filepath(settings['inputs'],satname)
@@ -130,8 +125,6 @@ def extract_shorelines(metadata, settings):
         str_new = ''
         if not sklearn.__version__[:4] == '0.20':
             str_new = '_new'
-        
-        clf_load_start = time.time()
 
         if satname in ['L5','L7','L8','L9']:
             pixel_size = 15
@@ -153,28 +146,23 @@ def extract_shorelines(metadata, settings):
         if satname == 'L7': settings['min_length_sl'] = 200
         else: settings['min_length_sl'] = default_min_length_sl
         
-        print(f"[Time] Loaded classifier model for {satname}: {time.time() - clf_load_start:.2f}s")
         # loop through the images
         for i in range(len(filenames)):
 
             print('\r%s:   %d%%' % (satname,int(((i+1)/len(filenames))*100)), end='')
-            loop_start = time.time()
             # get image filename
             fn = SDS_tools.get_filenames(filenames[i],filepath, satname)
 
-            prep_start = time.time()
             # preprocess image (cloud mask + pansharpening/downsampling)
             im_ms, georef, cloud_mask, im_extra, im_QA, im_nodata = SDS_preprocess.preprocess_single(fn, satname, 
                                                                                                      settings['cloud_mask_issue'], 
                                                                                                      settings['pan_off'],
                                                                                                      settings['s2cloudless_prob'])
             
-            print(f"\n  [Time] Preprocessing: {time.time() - prep_start:.2f}s")
 
             # get image spatial reference system (epsg code) from metadata dict
             image_epsg = metadata[satname]['epsg'][i]
             
-            cloud_start = time.time()
 
             # compute cloud_cover percentage (with no data pixels)
             cloud_cover_combined = np.divide(sum(sum(cloud_mask.astype(int))),
@@ -191,29 +179,20 @@ def extract_shorelines(metadata, settings):
             if cloud_cover > settings['cloud_thresh']:
                 continue
             
-            print(f"  [Time] Cloud masking & check: {time.time() - cloud_start:.2f}s")
 
             # calculate a buffer around the reference shoreline (if any has been digitised)
-            buffer_start = time.time()
             im_ref_buffer = create_shoreline_buffer(cloud_mask.shape, georef, image_epsg,
                                                     pixel_size, settings)
-            
-            print(f"  [Time] Shoreline buffer: {time.time() - buffer_start:.2f}s")
 
-            classify_start = time.time()
             # classify image in 4 classes (sand, whitewater, water, other) with NN classifier
             im_classif, im_labels = classify_image_NN(im_ms, cloud_mask, min_beach_area_pixels, clf)
-            
-            print(f"  [Time] Classification: {time.time() - classify_start:.2f}s")
 
             # if adjust_detection is True, let the user adjust the detected shoreline
             if settings['adjust_detection']:
-                adjust_start = time.time()
                 date = filenames[i][:19]
                 skip_image, shoreline, t_mndwi = adjust_detection(im_ms, cloud_mask, im_nodata, im_labels,
                                                                   im_ref_buffer, image_epsg, georef,
                                                                   settings, date, satname)
-                print(f"  [Time] Manual adjustment: {time.time() - adjust_start:.2f}s")
                 # if the user decides to skip the image, continue and do not save the mapped shoreline
                 if skip_image:
                     continue
@@ -222,7 +201,6 @@ def extract_shorelines(metadata, settings):
             # if there are pixels in the 'sand' class --> use find_wl_contours2 (enhanced)
             # otherwise use find_wl_contours1 (traditional)
             else:
-                contour_start = time.time()
                 try: # use try/except structure for long runs
                     if sum(im_labels[im_ref_buffer,0]) < 50: # minimum number of sand pixels
                         # compute MNDWI image (SWIR-G)
@@ -235,13 +213,10 @@ def extract_shorelines(metadata, settings):
                 except Exception as e:
                     print(f'Could not map shoreline for this image: {filenames[i]}, reason: {e}')
                     continue
-                print(f"  [Time] Contour mapping: {time.time() - contour_start:.2f}s")
 
-                process_start = time.time()
                 # process the water contours into a shoreline
                 shoreline = process_shoreline(contours_mwi, cloud_mask_adv, im_nodata,
                                               georef, image_epsg, settings)
-                print(f"  [Time] Shoreline processing: {time.time() - process_start:.2f}s")
 
                 # visualise the mapped shorelines, there are two options:
                 # if settings['check_detection'] = True, shows the detection to the user for accept/reject
@@ -265,7 +240,6 @@ def extract_shorelines(metadata, settings):
             output_idxkeep.append(i)
             output_t_mndwi.append(t_mndwi)
 
-            print(f"  [Time] Total for image {i+1}/{len(filenames)}: {time.time() - loop_start:.2f}s")
         # create dictionary of output
         output[satname] = {
                 'dates': output_timestamp,
@@ -286,7 +260,7 @@ def extract_shorelines(metadata, settings):
     output = SDS_tools.merge_output(output)
 
     # save outputput structure as output.pkl
-    filepath = os.path.join(filepath_data, sitename)
+    filepath = filepath_data
     with open(os.path.join(filepath, sitename + '_output.pkl'), 'wb') as f:
         pickle.dump(output, f)
 
@@ -838,7 +812,7 @@ def show_detection(im_ms, cloud_mask, im_labels, shoreline,image_epsg, georef,
     sitename = settings['inputs']['sitename']
     filepath_data = settings['inputs']['filepath']
     # subfolder where the .jpg file is stored if the user accepts the shoreline detection
-    filepath = os.path.join(filepath_data, sitename, 'jpg_files', 'detection')
+    filepath = os.path.join(filepath_data, 'jpg_files', 'detection')
 
     im_RGB = SDS_preprocess.rescale_image_intensity(im_ms[:,:,[2,1,0]], cloud_mask, 99.9)
 
@@ -1059,7 +1033,7 @@ def adjust_detection(im_ms, cloud_mask, im_nodata, im_labels, im_ref_buffer, ima
     sitename = settings['inputs']['sitename']
     filepath_data = settings['inputs']['filepath']
     # subfolder where the .jpg file is stored if the user accepts the shoreline detection
-    filepath = os.path.join(filepath_data, sitename, 'jpg_files', 'detection')
+    filepath = os.path.join(filepath_data, 'jpg_files', 'detection')
     # format date
     date_str = datetime.strptime(date,'%Y-%m-%d-%H-%M-%S').strftime('%Y-%m-%d  %H:%M:%S')
     im_RGB = SDS_preprocess.rescale_image_intensity(im_ms[:,:,[2,1,0]], cloud_mask, 99.9)

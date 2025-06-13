@@ -136,7 +136,7 @@ def retrieve_images(inputs):
         im_dict_s2cloudless = get_s2cloudless(im_dict_T1['S2'], inputs)
 
     # create a new directory for this site with the name of the site
-    im_folder = os.path.join(inputs['filepath'],inputs['sitename'])
+    im_folder = inputs['filepath']
     if not os.path.exists(im_folder): os.makedirs(im_folder)
 
     # QA band for each satellite mission
@@ -508,7 +508,7 @@ def get_metadata(inputs):
 
     """
     # directory containing the images
-    filepath = os.path.join(inputs['filepath'],inputs['sitename'])
+    filepath = inputs['filepath']
     # initialize metadata dict
     metadata = dict([])
     # loop through the satellite missions
@@ -641,7 +641,7 @@ def check_images_available(inputs):
 
     # check if images already exist  
     # print('\nLooking for existing imagery...')
-    filepath = os.path.join(inputs['filepath'],inputs['sitename'])
+    filepath = inputs['filepath']
     if os.path.exists(filepath):
         metadata_existing = get_metadata(inputs)
         for satname in inputs['sat_list']:
@@ -1108,7 +1108,7 @@ def merge_overlapping_images(metadata,inputs):
 
     # only for Sentinel-2 at this stage (not sure if this is needed for Landsat images)
     sat = 'S2'
-    filepath = os.path.join(inputs['filepath'], inputs['sitename'])
+    filepath = inputs['filepath']
     filenames = metadata[sat]['filenames']
     total_images = len(filenames)
     # nested function

@@ -422,20 +422,20 @@ def get_filepath(inputs,satname):
     # access the images
     if satname == 'L5':
         # access downloaded Landsat 5 images
-        fp_ms = os.path.join(filepath_data, sitename, satname, 'ms')
-        fp_mask = os.path.join(filepath_data, sitename, satname, 'mask')
+        fp_ms = os.path.join(filepath_data, satname, 'ms')
+        fp_mask = os.path.join(filepath_data, satname, 'mask')
         filepath = [fp_ms, fp_mask]
     elif satname in ['L7','L8','L9']:
         # access downloaded Landsat 7 images
-        fp_ms = os.path.join(filepath_data, sitename, satname, 'ms')
-        fp_pan = os.path.join(filepath_data, sitename, satname, 'pan')
-        fp_mask = os.path.join(filepath_data, sitename, satname, 'mask')
+        fp_ms = os.path.join(filepath_data, satname, 'ms')
+        fp_pan = os.path.join(filepath_data, satname, 'pan')
+        fp_mask = os.path.join(filepath_data, satname, 'mask')
         filepath = [fp_ms, fp_pan, fp_mask]
     elif satname == 'S2':
         # access downloaded Sentinel 2 images
-        fp_ms = os.path.join(filepath_data, sitename, satname, 'ms')
-        fp_swir = os.path.join(filepath_data, sitename, satname, 'swir')
-        fp_mask = os.path.join(filepath_data, sitename, satname, 'mask')
+        fp_ms = os.path.join(filepath_data, satname, 'ms')
+        fp_swir = os.path.join(filepath_data, satname, 'swir')
+        fp_mask = os.path.join(filepath_data, satname, 'mask')
         filepath = [fp_ms, fp_swir, fp_mask]
             
     return filepath

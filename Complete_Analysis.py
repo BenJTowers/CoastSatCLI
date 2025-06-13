@@ -172,12 +172,12 @@ def batch_shoreline_detection(metadata, settings, inputs):
     # Preprocess images (cloud masking, pansharpening/down-sampling)
     SDS_preprocess.save_jpg(metadata, settings, use_matplotlib=True)
     # create MP4 timelapse animation
-    fn_animation = os.path.join(inputs['filepath'], inputs['sitename'], '%s_animation_RGB.gif'%inputs['sitename'])
-    fp_images = os.path.join(inputs['filepath'], inputs['sitename'], 'jpg_files', 'preprocessed')
+    fn_animation = os.path.join(inputs['filepath'], '%s_animation_RGB.gif'%inputs['sitename'])
+    fp_images = os.path.join(inputs['filepath'], 'jpg_files', 'preprocessed')
     fps = 10 # frames per second in animation
     SDS_tools.make_animation_mp4(fp_images, fps, fn_animation)
     try:
-        filepath = os.path.join(settings['inputs']['filepath'], settings['inputs']['sitename'])
+        filepath = settings['inputs']['filepath']
         with open(os.path.join(filepath, settings['inputs']['sitename'] + '_output' + '.pkl'), 'rb') as f:
             output = pickle.load(f)
             return output  # If the file exists, return `output` here and exit the function
@@ -208,7 +208,6 @@ def batch_shoreline_detection(metadata, settings, inputs):
     gdf.to_file(
         os.path.join(
             settings['inputs']['filepath'],
-            settings['inputs']['sitename'],
             '%s_output_%s.geojson' % (settings['inputs']['sitename'], geomtype),
         ),
         driver='GeoJSON',
@@ -216,8 +215,8 @@ def batch_shoreline_detection(metadata, settings, inputs):
     )
 
     # create MP4 timelapse animation
-    fn_animation = os.path.join(inputs['filepath'],inputs['sitename'], '%s_animation_shorelines.gif'%inputs['sitename'])
-    fp_images = os.path.join(inputs['filepath'], inputs['sitename'], 'jpg_files', 'detection')
+    fn_animation = os.path.join(inputs['filepath'], '%s_animation_shorelines.gif'%inputs['sitename'])
+    fp_images = os.path.join(inputs['filepath'], 'jpg_files', 'detection')
     fps = 10 # frames per second in animation
     SDS_tools.make_animation_mp4(fp_images, fps, fn_animation)
 
@@ -233,7 +232,7 @@ def batch_shoreline_detection(metadata, settings, inputs):
             date = output['dates'][i]
             plt.plot(sl[:,0], sl[:,1], '.', label=date.strftime('%d-%m-%Y'))
         # plt.legend()
-        fig.savefig(os.path.join(settings['inputs']['filepath'], settings['inputs']['sitename'], 'mapped_shorelines.jpg'), dpi=200)
+        fig.savefig(os.path.join(settings['inputs']['filepath'], 'mapped_shorelines.jpg'), dpi=200)
         plt.close(fig)
         # Optionally, display the plot
         # plt.show()
@@ -291,7 +290,7 @@ def shoreline_analysis(output, settings):
                     bbox=dict(boxstyle='square', ec='k', fc='w'),
                 )
         fig.savefig(
-            os.path.join(settings['inputs']['filepath'], settings['inputs']['sitename'], 'mapped_shorelines_with_transects.jpg'),
+            os.path.join(settings['inputs']['filepath'], 'mapped_shorelines_with_transects.jpg'),
             dpi=200,
         )
         plt.close(fig)
@@ -344,7 +343,7 @@ def shoreline_analysis(output, settings):
                 fontsize=14,
             )
         fig.savefig(
-            os.path.join(settings['inputs']['filepath'], settings['inputs']['sitename'], 'time_series_raw.jpg'), dpi=200
+            os.path.join(settings['inputs']['filepath'], 'time_series_raw.jpg'), dpi=200
         )
         plt.close(fig)
         # Optionally, display the plot
@@ -358,7 +357,6 @@ def shoreline_analysis(output, settings):
     df = pd.DataFrame(out_dict)
     fn = os.path.join(
         settings['inputs']['filepath'],
-        settings['inputs']['sitename'],
         'transect_time_series.csv',
     )
     df.to_csv(fn, sep=',')
@@ -392,7 +390,7 @@ def tidal_correction(output, cross_distance, transects, settings, slope_est, dat
     for key in cross_distance_tidally_corrected.keys():
         out_dict[key] = cross_distance_tidally_corrected[key]
     df = pd.DataFrame(out_dict)
-    fn = os.path.join(settings['inputs']['filepath'], settings['inputs']['sitename'], 'transect_time_series_tidally_corrected.csv')
+    fn = os.path.join(settings['inputs']['filepath'], 'transect_time_series_tidally_corrected.csv')
     df.to_csv(fn, sep=',')
     print(f'Tidally-corrected time-series saved as:\n{fn}')
 
@@ -438,7 +436,7 @@ def improved_transects_plot(output, transects, cross_distance_tidally_corrected,
     cbar.ax.tick_params(labelsize=10)
 
     # Save the improved plot
-    output_path = os.path.join(settings['inputs']['filepath'], settings['inputs']['sitename'], 'transects_colored_by_trend_updated.jpg')
+    output_path = os.path.join(settings['inputs']['filepath'], 'transects_colored_by_trend_updated.jpg')
     fig.savefig(output_path, dpi=300)
     plt.close(fig)
     print(f"Plot saved to {output_path}")
@@ -511,7 +509,7 @@ def time_series_post_processing(transects, settings, cross_distance_tidally_corr
 
         # Save the figure
         fig.savefig(
-            os.path.join(settings['inputs']['filepath'], settings['inputs']['sitename'], 'transects_colored_by_trend.jpg'),
+            os.path.join(settings['inputs']['filepath'], 'transects_colored_by_trend.jpg'),
             dpi=200
         )
         plt.close(fig)
@@ -520,7 +518,6 @@ def time_series_post_processing(transects, settings, cross_distance_tidally_corr
     # Load the tidally-corrected time-series
     filepath = os.path.join(
         settings['inputs']['filepath'],
-        settings['inputs']['sitename'],
         'transect_time_series_tidally_corrected.csv'
     )
     df = pd.read_csv(filepath, parse_dates=['dates'])
@@ -542,7 +539,7 @@ def time_series_post_processing(transects, settings, cross_distance_tidally_corr
             ylabel='otsu threshold',
         )
         ax.legend(loc='upper left')
-        fig.savefig(os.path.join(settings['inputs']['filepath'], settings['inputs']['sitename'], 'otsu_thresholds.jpg'))
+        fig.savefig(os.path.join(settings['inputs']['filepath'], 'otsu_thresholds.jpg'))
         plt.close(fig)
         # Optionally, display the plot
         # plt.show()
@@ -623,7 +620,7 @@ def time_series_post_processing(transects, settings, cross_distance_tidally_corr
                 edgecolor='k',
                 columnspacing=1,
             )
-            fig.savefig(os.path.join(settings['inputs']['filepath'], settings['inputs']['sitename'], f'{key}_seasonal_average.jpg'))
+            fig.savefig(os.path.join(settings['inputs']['filepath'], f'{key}_seasonal_average.jpg'))
             plt.close(fig)
             # Optionally, display the plot
             # plt.show()
@@ -688,7 +685,7 @@ def time_series_post_processing(transects, settings, cross_distance_tidally_corr
                 edgecolor='k',
                 columnspacing=1,
             )
-            fig.savefig(os.path.join(settings['inputs']['filepath'], settings['inputs']['sitename'], f'{key}_monthly_average.jpg'))
+            fig.savefig(os.path.join(settings['inputs']['filepath'], f'{key}_monthly_average.jpg'))
             plt.close(fig)
             # Optionally, display the plot
             # plt.show()
@@ -701,7 +698,7 @@ def slope_estimation(settings, cross_distance, output):
     filtering the acquisition dates for slope estimation.
     """
     # Setup for output directory
-    fp_slopes = os.path.join(settings['inputs']['filepath'], settings['inputs']['sitename'], 'slope_estimation')
+    fp_slopes = os.path.join(settings['inputs']['filepath'], 'slope_estimation')
     if not os.path.exists(fp_slopes):
         os.makedirs(fp_slopes)
     print(f'Outputs will be saved in {fp_slopes}')
@@ -790,7 +787,7 @@ def slope_estimation(settings, cross_distance, output):
             title='Tide Levels at the Time of Image Acquisition',
         )
         ax.legend()
-        fig.savefig(os.path.join(settings['inputs']['filepath'], settings['inputs']['sitename'], '%s_tide_timeseries.jpg' % settings['inputs']['sitename']), dpi=200)
+        fig.savefig(os.path.join(settings['inputs']['filepath'], '%s_tide_timeseries.jpg' % settings['inputs']['sitename']), dpi=200)
         plt.close(fig)
 
     # Settings for slope estimation
@@ -908,7 +905,7 @@ def calculate_and_save_trends(transects, cross_distance_tidally_corrected, outpu
 
     # Save GeoJSON with trends
     geojson_path = os.path.join(
-        settings['inputs']['filepath'], settings['inputs']['sitename'], f"{settings['inputs']['sitename']}_transects_with_trends.geojson"
+        settings['inputs']['filepath'], f"{settings['inputs']['sitename']}_transects_with_trends.geojson"
     )
     gdf_transects.to_file(geojson_path, driver='GeoJSON', encoding='utf-8')
     print(f"Transects with trends saved to {geojson_path}")

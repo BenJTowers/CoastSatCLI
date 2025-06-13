@@ -698,7 +698,7 @@ def save_jpg(metadata, settings, use_matplotlib=False):
     filepath_data = settings['inputs']['filepath']
     
     # create subfolder to store the jpg files
-    filepath_jpg = os.path.join(filepath_data, sitename, 'jpg_files', 'preprocessed')
+    filepath_jpg = os.path.join(filepath_data, 'jpg_files', 'preprocessed')
     if not os.path.exists(filepath_jpg):
             os.makedirs(filepath_jpg)
 
@@ -738,7 +738,7 @@ def save_jpg(metadata, settings, use_matplotlib=False):
             create_jpg(im_ms, cloud_mask, date, satname, filepath_jpg, use_matplotlib)
         print('')
     # print the location where the images have been saved
-    print('Satellite images saved as .jpg in ' + os.path.join(filepath_data, sitename,
+    print('Satellite images saved as .jpg in ' + os.path.join(filepath_data,
                                                     'jpg_files', 'preprocessed'))
 
 def get_reference_sl(metadata, settings):

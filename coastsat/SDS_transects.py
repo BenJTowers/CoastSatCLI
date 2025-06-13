@@ -93,7 +93,7 @@ def draw_transects(output, settings):
     """   
     
     sitename = settings['inputs']['sitename']
-    filepath = os.path.join(settings['inputs']['filepath'], sitename)
+    filepath = settings['inputs']['filepath']
 
     # plot the mapped shorelines
     fig1 = plt.figure()
