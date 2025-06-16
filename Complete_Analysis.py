@@ -81,12 +81,6 @@ def initial_settings(config):
     polygon = SDS_tools.polygon_from_kml(config['inputs']['aoi_path'])
     polygon = SDS_tools.smallest_rectangle(polygon)
 
-    rect_shape = Polygon(polygon[0])
-
-    # compute its centroid:
-    centroid = [rect_shape.centroid.x, rect_shape.centroid.y] #doesn't quite work as it is not over water all the time
-
-
     # Date range
     dates = ['2022-01-01', '2025-01-01']
 
@@ -102,7 +96,6 @@ def initial_settings(config):
     # Put all the inputs into a dictionary
     inputs = {
         'polygon': polygon,
-        'centroid': [-123.47598591323761,48.65369546638317],
         'dates': dates,
         'sat_list': sat_list,
         'sitename': sitename,
@@ -741,10 +734,12 @@ def slope_estimation(settings, cross_distance, output):
     handlers = pyfes.load_config(fes_yaml)
     ocean_tide = handlers['tide']
     load_tide = handlers['radial']
+
+    aoi_geom = Polygon(settings['inputs']['polygon'][0])
     
     # Calculate tides at centroid
-    centroid = settings['inputs']['centroid']
-    centroid[0] = centroid[0] + 360 if centroid[0] < 0 else centroid[0]
+    centroid = SDS_tools.select_valid_centroid(aoi_geom, ocean_tide, load_tide)
+    #centroid = [236.51805409, 48.65420802439958]
 
     # Generate full time-series tide data for graphing
     date_range = [

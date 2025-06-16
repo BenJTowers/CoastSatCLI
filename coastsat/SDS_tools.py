@@ -15,9 +15,11 @@ import pdb
 from osgeo import gdal, osr
 import geopandas as gpd
 from shapely import geometry
+from shapely.geometry import Polygon
 import skimage.transform as transform
 from astropy.convolution import convolve
 import pytz
+import pyfes
 from datetime import datetime, timedelta
 from scipy import stats, interpolate
 import pyproj
@@ -1008,3 +1010,95 @@ def compare_timeseries(ts,gt,key,settings):
     ax3.text(0, 0.98, str_stats,va='top', transform=ax3.transAxes)    
     
     return chain_sat, chain_sur, satnames, fig
+
+###################################################################################################
+# Centroid Selection
+###################################################################################################
+
+
+def select_valid_centroid(geom: Polygon, ocean_tide, load_tide):
+    """
+    Try center and edges of AOI geometry to select the best possible centroid.
+    Prioritize ocean_tide flags: prefer 4 (best), then 3, 2, 1, 0 (worst).
+    If no point yields flag 4, perform outward probing from best candidate.
+    """
+
+    # Constants
+    date_range = [
+        pytz.utc.localize(datetime(2020, 1, 1)),
+        pytz.utc.localize(datetime(2020, 1, 2))
+    ]
+    timestep = 3600  # One hour
+
+    def evaluate(coord):
+        dates = []
+        date = date_range[0]
+        while date <= date_range[1]:
+            dates.append(date)
+            date += timedelta(seconds=timestep)
+
+        dates_np = np.array(dates, dtype='datetime64[us]')
+        lons = np.full(len(dates_np), coord[0])
+        lats = np.full(len(dates_np), coord[1])
+
+        _, _, flags_ocean = pyfes.evaluate_tide(ocean_tide, dates_np, lons, lats)
+        _, _, flags_load = pyfes.evaluate_tide(load_tide, dates_np, lons, lats)
+
+        return {
+            'coord': coord,
+            'ocean_flags': np.unique(flags_ocean),
+            'load_flags': np.unique(flags_load),
+        }
+
+    def score(flags):
+        if np.all(flags == 4): return 0
+        if np.all(flags == 3): return 1
+        if np.all(flags == 2): return 2
+        if np.all(flags == 1): return 3
+        return 4  # undefined or mixed values
+
+    # Generate centroid and edge candidates
+    centroid = list(geom.centroid.coords)[0]
+    minx, miny, maxx, maxy = geom.bounds
+    edge_centroids = [
+        ((minx + maxx)/2, miny),
+        ((minx + maxx)/2, maxy),
+        (minx, (miny + maxy)/2),
+        (maxx, (miny + maxy)/2),
+    ]
+    test_coords = [centroid] + edge_centroids
+
+    candidates = []
+    for lon, lat in test_coords:
+        lon_adj = lon + 360 if lon < 0 else lon
+        result = evaluate([lon_adj, lat])
+        candidates.append(result)
+
+    candidates.sort(key=lambda r: score(r['ocean_flags']))
+    best = candidates[0]
+
+    # If best has flag 4, return immediately
+    if score(best['ocean_flags']) == 0:
+        print(f"[Centroid] Selected: {best['coord']} with ocean flags {best['ocean_flags']}")
+        return best['coord']
+
+    # Else, try refining
+    def refine(base_coord):
+        step = 0.03
+        max_radius = 0.7
+        bearings = [(1,0), (0,1), (-1,0), (0,-1)]
+        lon0, lat0 = base_coord
+
+        for r in np.arange(step, max_radius + step, step):
+            for dx, dy in bearings:
+                lon_test = lon0 + dx * r
+                lat_test = lat0 + dy * r
+                result = evaluate([lon_test, lat_test])
+                if score(result['ocean_flags']) == 0:
+                    print(f"[Centroid] Refined to: {result['coord']} with ocean flags {result['ocean_flags']}")
+                    return result['coord']
+
+        print(f"[Centroid] No better refinement found. Using: {base_coord} with flags {best['ocean_flags']}")
+        return base_coord
+
+    return refine(best['coord'])
