@@ -113,6 +113,7 @@ def retrieve_images(inputs):
 
     """
     # initialise connection with GEE server
+    print("[Step 1] Initializing Google Earth Engine...")
     authenticate_and_initialize()
 
     # check image availabiliy and retrieve list of images
@@ -150,7 +151,7 @@ def retrieve_images(inputs):
                   'S2':['B2','B3','B4','B8','s2cloudless','B11',qa_band_S2]}
     
     # main loop to download the images for each satellite mission
-    print('\nDownloading images:')
+    print('\n[Step 2] Downloading images:')
     suffix = '.tif'
     for satname in im_dict_T1.keys():
 

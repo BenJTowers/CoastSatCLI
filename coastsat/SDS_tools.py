@@ -588,7 +588,7 @@ def remove_duplicates(output):
         idx_keep = list(np.where(~np.isin(idx_all,idx_remove))[0])        
         for key in output.keys():
             output_no_duplicates[key] = [output[key][i] for i in idx_keep]
-        print('%d duplicates' % len(idx_remove))
+        print('%d duplicate photos removed' % len(idx_remove))
         return output_no_duplicates 
     else: 
         print('0 duplicates')
@@ -629,7 +629,7 @@ def remove_inaccurate_georef(output, accuracy):
     output_filtered = dict([])
     for key in output.keys():
         output_filtered[key] = [output[key][i] for i in idx]
-    print('%d bad georef' % (len(output['geoaccuracy']) - len(idx)))
+    print('%d images with bad georeferencing removed' % (len(output['geoaccuracy']) - len(idx)))
     return output_filtered
 
 def get_closest_datapoint(dates, dates_ts, values_ts):
@@ -762,7 +762,7 @@ def transects_from_geojson(filename):
         
         transects[gdf.loc[i, 'name']] = reversed_coords
     print('%d transects have been loaded'%len(transects.keys()), end=' ')
-    print('coordinates are in epsg:%d'%gdf.crs.to_epsg())
+    print('\ncoordinates are in epsg:%d'%gdf.crs.to_epsg())
 
     return transects
 
@@ -1023,6 +1023,8 @@ def select_valid_centroid(geom: Polygon, ocean_tide, load_tide):
     If no point yields flag 4, perform outward probing from best candidate.
     """
 
+    print("[Centroid Selection] Starting candidate evaluation...")
+
     # Constants
     date_range = [
         pytz.utc.localize(datetime(2020, 1, 1)),
@@ -1072,17 +1074,18 @@ def select_valid_centroid(geom: Polygon, ocean_tide, load_tide):
     for lon, lat in test_coords:
         lon_adj = lon + 360 if lon < 0 else lon
         result = evaluate([lon_adj, lat])
+        print(f"  • Tested point: [{lon_adj:.4f}, {lat:.4f}] → Ocean Flags: {result['ocean_flags']}")
         candidates.append(result)
 
     candidates.sort(key=lambda r: score(r['ocean_flags']))
     best = candidates[0]
 
-    # If best has flag 4, return immediately
     if score(best['ocean_flags']) == 0:
-        print(f"[Centroid] Selected: {best['coord']} with ocean flags {best['ocean_flags']}")
+        print(f"[Centroid Selection] ✅ Selected best candidate: {best['coord']} with ocean flags {best['ocean_flags']}")
         return best['coord']
 
-    # Else, try refining
+    print("[Centroid Selection] No ideal candidate found (flag 4). Starting refinement sweep...")
+
     def refine(base_coord):
         step = 0.03
         max_radius = 0.7
@@ -1094,11 +1097,14 @@ def select_valid_centroid(geom: Polygon, ocean_tide, load_tide):
                 lon_test = lon0 + dx * r
                 lat_test = lat0 + dy * r
                 result = evaluate([lon_test, lat_test])
+                print(f"  • Refinement test at radius {r:.2f}: [{lon_test:.4f}, {lat_test:.4f}] → Ocean Flags: {result['ocean_flags']}")
                 if score(result['ocean_flags']) == 0:
-                    print(f"[Centroid] Refined to: {result['coord']} with ocean flags {result['ocean_flags']}")
+                    lon, lat = float(result['coord'][0]), float(result['coord'][1])
+                    print(f"[Centroid] Refined to: [{lon:.6f}, {lat:.6f}] with ocean flags {result['ocean_flags']}")
                     return result['coord']
 
-        print(f"[Centroid] No better refinement found. Using: {base_coord} with flags {best['ocean_flags']}")
+        print(f"[Centroid Refinement] ⚠️ No better refinement found. Defaulting to best candidate: {base_coord} with ocean flags {best['ocean_flags']}")
         return base_coord
 
     return refine(best['coord'])
+

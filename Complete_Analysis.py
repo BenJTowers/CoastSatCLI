@@ -165,6 +165,7 @@ def batch_shoreline_detection(metadata, settings, inputs):
     # Preprocess images (cloud masking, pansharpening/down-sampling)
     SDS_preprocess.save_jpg(metadata, settings, use_matplotlib=True)
     # create MP4 timelapse animation
+    print("[Step 4] Generating RGB time-lapse animation (this may take several minutes)...")
     fn_animation = os.path.join(inputs['filepath'], '%s_animation_RGB.gif'%inputs['sitename'])
     fp_images = os.path.join(inputs['filepath'], 'jpg_files', 'preprocessed')
     fps = 10 # frames per second in animation
@@ -249,6 +250,8 @@ def shoreline_analysis(output, settings):
 
     # Now we have to define cross-shore transects over which to quantify the shoreline changes
     # Each transect is defined by two points, its origin and a second point that defines its orientation
+    
+    print("[Step 5] Running shoreline change analysis for each transect...")
 
     # TODO: Set transects to be drawn
     # Option 1: Draw origin of transect first and then a second point to define the orientation
@@ -432,7 +435,7 @@ def improved_transects_plot(output, transects, cross_distance_tidally_corrected,
     output_path = os.path.join(settings['inputs']['filepath'], 'transects_colored_by_trend_updated.jpg')
     fig.savefig(output_path, dpi=300)
     plt.close(fig)
-    print(f"Plot saved to {output_path}")
+    print(f"Improved plot saved to {output_path}")
 
 
 def time_series_post_processing(transects, settings, cross_distance_tidally_corrected, output):
@@ -690,6 +693,7 @@ def slope_estimation(settings, cross_distance, output):
     Estimate the beach slope along each transect, while graphing the full tide series and then 
     filtering the acquisition dates for slope estimation.
     """
+    print("[Step 6] Estimating beach slopes...")
     # Setup for output directory
     fp_slopes = os.path.join(settings['inputs']['filepath'], 'slope_estimation')
     if not os.path.exists(fp_slopes):
@@ -830,6 +834,7 @@ def slope_estimation(settings, cross_distance, output):
     plt.close(fig)
 
     # Dictionary to store the slope estimates per transect
+    print("[Step 6] Estimating beach slopes from elevation data...\n")
     slope_est, cis = dict([]), dict([])
     for key in cross_distance.keys():
         try:
@@ -855,7 +860,7 @@ def slope_estimation(settings, cross_distance, output):
             fig = plt.gcf()
             fig.savefig(os.path.join(fp_slopes, f'3_slope_spectrum_{key}.jpg'), dpi=200)
             plt.close(fig)
-            print(f'Beach slope at transect {key}: {slope_est[key]:.3f} ({cis[key][0]:.4f} - {cis[key][1]:.4f})')
+            print(f"  → {key}: Estimated slope = {slope_est[key]:.3f} m (CI: {cis[key][0]:.4f} – {cis[key][1]:.4f})")
         except Exception as e:
             print(f'Error processting transect {key}: {e}')
             print(f"Setting default slope for transect {key} to 0.1 due to error.")
@@ -869,6 +874,7 @@ def calculate_and_save_trends(transects, cross_distance_tidally_corrected, outpu
     """
     Calculate the shoreline change trend for each transect and save it to a GeoJSON.
     """
+    print("[Step 7] Estimating shoreline change trends for each transect...")
     trend_dict = {}
     for key in transects.keys():
         # Get valid distances and dates
@@ -883,7 +889,7 @@ def calculate_and_save_trends(transects, cross_distance_tidally_corrected, outpu
             trend = np.nan  # Not enough data to calculate trend
 
         trend_dict[key] = trend
-        print(f"Transect {key}: Trend = {trend}")
+        print(f"→ {key}: Trend = {trend:.4f} m/year")
 
     # Create a GeoDataFrame for transects
     transect_data = []
@@ -928,6 +934,8 @@ def main(config_path):
     trend_dict = calculate_and_save_trends(transects, cross_distance_tidally_corrected, output, settings, slope_est)
     improved_transects_plot(output, transects, cross_distance_tidally_corrected, settings)
     cross_distance = time_series_post_processing(transects, settings, cross_distance_tidally_corrected, output)
+
+    print("Analysis completed successfully.")
 
     # plt.show()
 

@@ -703,7 +703,7 @@ def save_jpg(metadata, settings, use_matplotlib=False):
             os.makedirs(filepath_jpg)
 
     # loop through satellite list
-    print('Saving images as jpg:')
+    print('[Step 3] Converting satellite imagery to JPG format...')
     for satname in metadata.keys():
         
         filepath = SDS_tools.get_filepath(settings['inputs'],satname)

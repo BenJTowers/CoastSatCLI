@@ -425,6 +425,8 @@ def reject_outliers(cross_distance, output, settings):
     """
     
     chain_dict = dict([])
+
+    print("[Step 8] Cleaning time series data (removing outliers)...")
     
     for i,key in enumerate(list(cross_distance.keys())):
         
@@ -465,7 +467,7 @@ def reject_outliers(cross_distance, output, settings):
         # store in chain_dict
         chain_dict[key] = chainage
         
-        print('%s  - outliers removed: %d'%(key, len(dates1) - len(dates3)))
+        print('→ %s: Removed %d outliers'%(key, len(dates1) - len(dates3)))
         # figure for QA
         if settings['plot_fig']:
             fig,ax=plt.subplots(2,1,figsize=[12,6], sharex=True)
