@@ -17,35 +17,28 @@ Automate shoreline extraction and analysis using CoastSat via a simple CLI.
 6. [Settings File (settings.json)](#settings-file-settingsjson)
 7. [Directory Structure](#directory-structure)
 8. [Contributing](#contributing)
-9. [License](#license)
+9. [FES2022 Tide Model Setup](#fes2022-tide-model-setup)
 
 ---
 
 ## Overview
 
-The CoastSat Project Toolkit provides a step-by-step Command-Line Interface (CLI) for:
+This project is part of the Canadian Coastal Change project at NRCan, where we seek to gather a nationwide dataset explaining shoreline evolution around Canada’s coast over the past 40+ years. This CLI tool enables standardized analysis of AOIs using shoreline transects that track positional change. Landsat satellite imagery and tide correction via the FES2022 model are used to build consistent, validated shoreline time series.
 
-1. Creating a standardized project folder (AOI, reference shoreline, transects, FES config, output).
-2. Auto-detecting the AOI’s CRS (EPSG) or falling back to a default.
-3. Running the full CoastSat analysis (Complete\_Analysis.py) with a single command.
-4. Browsing and visualizing resulting shorelines, time series, and plots.
-
-This README explains how to install, initialize, run, and inspect results in a concise manner.
+This CLI builds on the [CoastSat](https://github.com/kvos/coastsat) project, an open-source toolkit that uses 40+ years of Landsat and Sentinel-2 imagery to monitor shoreline change via Google Earth Engine.
 
 ---
 
 ## Prerequisites
 
-* Python 3.8 or higher (tested on 3.9/3.10).
-* Conda (recommended) or another virtual-environment manager.
-* Required packages (listed in `environment.yml` or `requirements.txt`), including:
+* Python 3.8 or higher (tested on 3.11).
+* [Miniforge](https://github.com/conda-forge/miniforge) — a minimal installer for Conda (with optional Mamba support).
+* Recommended: [Conda](https://docs.conda.io/en/latest/) or [Mamba](https://mamba.readthedocs.io/en/latest/) as your environment/package manager.
+* Key Python libraries:
 
-  * `typer`
-  * `tkinter`
-  * `geopandas`
-  * `shapely`
-  * `pandas`, `numpy`, `matplotlib`
-  * CoastSat dependencies (`pyfes`, `scikit-image`, etc.)
+  * `typer`, `tkinter`, `geopandas`, `shapely`, `matplotlib`, `scikit-image`, `pyfes`, `pyyaml`, `imageio`, `imageio-ffmpeg`, etc.
+
+> 💡 Miniforge is a lightweight way to install Conda or Mamba with conda-forge as the default channel. We recommend using it to avoid conflicts with the default Anaconda distribution.
 
 Before proceeding, verify key imports:
 
@@ -63,24 +56,28 @@ EOF
 1. **Clone this repository** and change into its folder:
 
    ```bash
-   git clone https://github.com/yourusername/coastsat-cli.git  
+   git clone https://github.com/BenJTowers/CoastSatCLI
    cd coastsat-cli
    ```
 
-2. **Create and activate a Conda environment** (if you don’t already have one):
+2. **Create and activate a Conda environment** (recommended):
 
    ```bash
-   conda env create -f environment.yml  
+   conda create -n coastsat python=3.11
    conda activate coastsat
+   conda install geopandas gdal
+   conda install earthengine-api scikit-image matplotlib astropy notebook
+   pip install pyqt5 imageio-ffmpeg
+   conda install pyfes pyyaml typer
    ```
 
-   Or, using pip in a virtual environment:
+   Or, using Mamba (if you’ve installed it via Miniforge):
 
    ```bash
-   python -m venv venv  
-   source venv/bin/activate   # (Linux/macOS)  
-   venv\Scripts\activate     # (Windows)  
-   pip install -r requirements.txt
+   mamba create -n coastsat python=3.11
+   mamba activate coastsat
+   mamba install geopandas gdal earthengine-api scikit-image matplotlib astropy notebook pyfes pyyaml typer
+   pip install pyqt5 imageio-ffmpeg
    ```
 
 3. **Install CoastSat CLI package**:
@@ -89,7 +86,40 @@ EOF
    pip install -e .
    ```
 
-   This installs “coastsatcli” on your PATH, giving you access to `coastsat init`, `coastsat run`, and `coastsat show`.
+This installs “coastsat” on your PATH, giving you access to CLI commands such as `coastsat init`, `coastsat run`, and `coastsat show`.
+
+> ⚠️ If you encounter installation issues, try:
+>
+> ```bash
+> conda clean --all
+> conda update conda
+> ```
+
+---
+
+## 🌍 Step 2: Set Up Google Earth Engine
+
+This project uses the **Google Earth Engine (GEE)** API to download satellite imagery (e.g., Landsat, Sentinel-2). To enable this:
+
+### 2.1 Sign Up for Earth Engine
+
+👉 [https://signup.earthengine.google.com](https://signup.earthengine.google.com)
+
+Use your **Google account** to request access.
+
+### 2.2 Install the Google Cloud SDK
+
+Download: [https://cloud.google.com/sdk/docs/install](https://cloud.google.com/sdk/docs/install)
+
+After installation, run:
+
+```bash
+gcloud auth application-default login
+```
+
+> ⚠️ This ensures your Earth Engine credentials persist across runs.
+
+✅ Once authenticated, you're ready to initialize a CoastSat project.
 
 ---
 
@@ -111,72 +141,63 @@ You will be prompted to:
 
 * Select a **base directory** (system file‐browser dialog).
 * Enter a **project name** (e.g., `tuk`).
-* Select an **AOI KML** (copies it, then reads for CRS).
-* Confirm or override the **EPSG** (auto‐detected or default = 3156).
-* Select **Reference Shoreline** (GeoJSON) and **Transects** (GeoJSON).
-* Select your **FES2022 YAML** (stored as absolute path).
-* Create the **outputs/** folder.
-* A final “Run analysis now?” popup will appear.
+* Select a **shoreline shapefile**.
+* Confirm or override the **EPSG code** (auto‐detected).
+* Select one or more **AOI files** (GeoJSON, KML, or SHP).
+* For each AOI, CoastSat will:
 
-Upon completion, you’ll see:
+  * Clip the shoreline.
+  * Generate a reference shoreline.
+  * Generate transects.
+  * Save all files in a new project folder.
+
+At the end, you will be asked whether to **immediately run the analysis**. You may choose "Yes" to begin processing right away, or "No" to run it later using the CLI.
+
+Structure:
 
 ```
-<base_dir>/<sitename>/  
-├── inputs/  
-│   ├── aoi/          
-│   │   └── <sitename>_aoi.kml  
-│   ├── reference/    
-│   │   └── <sitename>_ref.geojson  
-│   ├── transects/    
-│   │   └── <sitename>_transects.geojson  
-│   └── fes_config.yaml  # absolute path stored in settings.json  
-├── outputs/  
-└── settings.json     
+<base_dir>/<sitename>/
+├── inputs/
+│   ├── shoreline/...
+│   ├── aoi/...
+│   ├── reference/...
+│   └── transects/...
+├── settings.json
+└── outputs/
 ```
 
 ### 4.2 Run the Complete Analysis
 
-If you chose **No** at the final prompt or want to run later, type:
-
 ```bash
-coastsat run --config /path/to/<sitename>/settings.json
+coastsat run --config path/to/<sitename>/settings.json
 ```
 
-Internally, this runs:
+This runs:
 
 ```bash
-python Complete_Analysis.py --config /path/to/<sitename>/settings.json
+python Complete_Analysis.py --config path/to/settings.json
 ```
 
-That executes the entire CoastSat pipeline (download, preprocess, shoreline detection, transect analysis, slope + tide correction, trend plotting, etc.).
+Which downloads imagery, extracts shorelines, applies FES2022 tide correction, generates slope plots, and more.
 
 ### 4.3 Inspect Output
 
-After analysis finishes, files appear under:
-
-```
-<base_dir>/<sitename>/outputs/
-```
-
-To view the folder tree, type:
-
 ```bash
-coastsat show --config /path/to/<sitename>/settings.json
+coastsat show --config path/to/<sitename>/settings.json
 ```
 
-You might see:
+Sample output:
 
 ```
-outputs/  
-├─ tuk_output_points.geojson  
-├─ mapped_shorelines.jpg   
-├─ plots/    
-│   ├─ tuk_tide_timeseries.jpg  
-│   ├─ 0_timestep_distribution.jpg  
-│   └─ …   
-└─ time_series/  
-    ├─ transect_time_series.csv  
-    └─ transect_time_series_tidally_corrected.csv
+outputs/
+├─ <sitename>_output_points.geojson
+├─ mapped_shorelines.jpg
+├─ plots/
+│   ├─ tide_timeseries.jpg
+│   ├─ energy_curve_<transect>.jpg
+├─ time_series/
+│   ├─ transect_time_series.csv
+│   └─ transect_time_series_tidally_corrected.csv
 ```
 
 ---
@@ -190,59 +211,44 @@ Options:
   --help  Show this message and exit.
 
 Commands:
-  init  Create a new CoastSat project (AOI, shoreline, transects, FES).  
-  run   Run the full CoastSat analysis using your settings.json.  
-  show  Show the directory tree under the project's output folder.
+  init  Create a new CoastSat project (shoreline, AOIs, transects).
+  run   Run the full CoastSat analysis using your settings.json.
+  show  Show the directory tree under the project’s output folder.
 ```
-
-* **`coastsat init`**: Walks you through project setup (file-browser dialogs, progress bars, and writes `settings.json`).
-* **`coastsat run --config <settings.json>`**: Executes `Complete_Analysis.py` with the given config.
-* **`coastsat show --config <settings.json>`**: Prints the folder structure of `<sitename>/outputs`.
 
 ---
 
 ## Settings File (settings.json)
 
-After initialization, `settings.json` looks like:
-
 ```json
 {
   "inputs": {
     "sitename": "tuk",
-    "aoi_path": "inputs/aoi/tuk_aoi.kml",
+    "shoreline_path": "inputs/shoreline/CANCOAST.geojson",
+    "aoi_paths": ["inputs/aoi/tuk_aoi.geojson"],
     "reference_shoreline": "inputs/reference/tuk_ref.geojson",
-    "transects": "inputs/transects/tuk_transects.geojson",
-    "fes_config": "C:/absolute/path/to/fes2022.yaml"
+    "transects": "inputs/transects/tuk_transects.geojson"
   },
   "output_dir": "outputs",
-  "output_epsg": 3156
+  "output_epsg": 3156,
+  "fes_config": "/absolute/path/to/fes2022.yaml"
 }
 ```
-
-* **`inputs.aoi_path`**, **`reference_shoreline`**, **`transects`** are relative to the project root.
-* **`fes_config`** is stored as an absolute path.
-* **`output_dir`** is relative (usually `"outputs"`).
-* **`output_epsg`** is the EPSG code used throughout CoastSat.
 
 ---
 
 ## Directory Structure
 
 ```
-<base_dir>/<sitename>/  
-├─ inputs/        
-│   ├─ aoi/           
-│   │   └─ tuk_aoi.kml  
-│   ├─ reference/     
-│   │   └─ tuk_ref.geojson  
-│   ├─ transects/     
-│   │   └─ tuk_transects.geojson  
-│   └─ fes_config.yaml  
-├─ outputs/       
-│   ├─ tuk_output_points.geojson  
-│   ├─ mapped_shorelines.jpg  
-│   ├─ plots/    
-│   └─ time_series/  
+<base_dir>/<sitename>/
+├─ inputs/
+│   ├─ shoreline/
+│   ├─ aoi/
+│   ├─ reference/
+│   └─ transects/
+├─ outputs/
+│   ├─ plots/
+│   └─ time_series/
 └─ settings.json
 ```
 
@@ -276,8 +282,31 @@ Please follow the existing style:
 
 ---
 
-## License
+## FES2022 Tide Model Setup
 
-This project is released under the MIT License. See `LICENSE` for details.
+To apply tidal correction using the FES2022 model, you must download the required tide constituent files and provide a YAML configuration file that points to them.
 
----
+1. **Download FES2022 files**:
+   You must acquire the official FES2022 tide model from AVISO. Registration is required:
+   👉 [https://www.aviso.altimetry.fr/en/data/products/auxiliary-products/global-tide-fes.html](https://www.aviso.altimetry.fr/en/data/products/auxiliary-products/global-tide-fes.html)
+
+2. **Create a YAML config file** with paths to your local files:
+
+```yaml
+fes:
+  path: /path/to/fes2022
+  grid: fes2022_ocean_tide_loading_grid.nc
+  constituents:
+    - M2
+    - S2
+    - N2
+    - K1
+    - O1
+    - Q1
+    - K2
+    - M4
+```
+
+3. **Reference this config in your `settings.json`** using the `fes_config` key.
+
+> 🧠 Tip: For efficiency, you may crop your NetCDF files to a small bounding box around your AOIs before analysis.
