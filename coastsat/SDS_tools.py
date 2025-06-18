@@ -882,13 +882,26 @@ def smallest_rectangle(polygon):
 ###################################################################################################
 
 def make_animation_mp4(filepath_images, fps, fn_out):
-    "function to create an animation with the saved figures"
-    with imageio.get_writer(fn_out, mode='I', duration=1000/fps) as writer:
-        filenames = (os.path.join(filepath_images, f) for f in sorted(os.listdir(filepath_images)) if os.path.isfile(os.path.join(filepath_images, f)))
-        for filepath in filenames:
-            image = iio.imread(filepath)
-            writer.append_data(image)
-    print('Animation has been generated (using %d frames per second) and saved at %s'%(fps,fn_out))
+    from imageio import get_writer, imread
+    import os
+
+    with get_writer(fn_out, fps=fps, plugin='ffmpeg', codec='libx264') as writer:
+        filenames = sorted(
+            os.path.join(filepath_images, f)
+            for f in os.listdir(filepath_images)
+            if os.path.isfile(os.path.join(filepath_images, f))
+        )
+        for i, filepath in enumerate(filenames, 1):
+            try:
+                image = imread(filepath)
+                writer.append_data(image)
+            except Exception as e:
+                print(f"⚠️ Skipped frame {i}: {filepath} due to error: {e}")
+
+    print(f"✅ MP4 animation saved at: {fn_out}")
+
+
+
     
 ###################################################################################################
 # VALIDATION

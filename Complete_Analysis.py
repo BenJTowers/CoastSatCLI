@@ -82,7 +82,7 @@ def initial_settings(config):
     polygon = SDS_tools.smallest_rectangle(polygon)
 
     # Date range
-    dates = ['2022-01-01', '2025-01-01']
+    dates = ['1984-01-01', '2025-01-01']
 
     # TODO: Set sat list and date range
     # Satellites
@@ -728,7 +728,7 @@ def slope_estimation(settings, cross_distance, output):
                         'otsu_threshold':     [-.5,0],        # min and max intensity threshold use for contouring the shoreline
                         'plot_fig':           False,           # whether to plot the intermediate steps
                         }
-    # cross_distance = SDS_transects.reject_outliers(cross_distance,output,settings_outliers)
+    cross_distance = SDS_transects.reject_outliers(cross_distance,output,settings_outliers)
 
 
 
@@ -894,11 +894,20 @@ def calculate_and_save_trends(transects, cross_distance_tidally_corrected, outpu
     # Create a GeoDataFrame for transects
     transect_data = []
     for key, geometry in transects.items():
+
+        seasonal_plot_filename = f'{key}_seasonal_average.jpg'
+        seasonal_plot_path = os.path.join(settings['inputs']['filepath'], seasonal_plot_filename)
+
+        slope_energy_curve_filename = f'2_energy_curve_{key}.jpg'
+        slope_energy_curve_path = os.path.join(settings['inputs']['filepath'], 'slope_estimation', slope_energy_curve_filename)
+
         transect_data.append({
             'id': key,
             'geometry': MultiLineString([geometry]),
             'trend': trend_dict.get(key, np.nan),
-            'slope': slope_est[key]
+            'slope': slope_est.get(key, 0.1),
+            'plot_path': seasonal_plot_path,
+            'slope_plot_path': slope_energy_curve_path
         })
 
     # Create GeoDataFrame

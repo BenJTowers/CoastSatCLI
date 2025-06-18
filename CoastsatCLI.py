@@ -7,8 +7,6 @@ import tkinter as tk
 import geopandas as gpd
 from tkinter import filedialog, messagebox
 from pathlib import Path
-from reference_shoreline_and_transect_builder import clip_shoreline_to_aoi, generate_transects_along_line
-from epsg_utils import pick_canadian_utm_epsg
 from site_initialize import initialize_single_site
 
 app = typer.Typer(
