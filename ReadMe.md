@@ -7,17 +7,15 @@ Automate shoreline extraction and analysis using CoastSat via a simple CLI.
 ## Table of Contents
 
 1. [Overview](#overview)
-2. [Prerequisites](#prerequisites)
-3. [Installation](#installation)
-4. [Quick Start](#quick-start)
-   4.1 [Initialize a Project](#41-initialize-a-project)
-   4.2 [Run the Complete Analysis](#42-run-the-complete-analysis)
-   4.3 [Inspect Output](#43-inspect-output)
-5. [CLI Commands](#cli-commands)
-6. [Settings File (settings.json)](#settings-file-settingsjson)
-7. [Directory Structure](#directory-structure)
-8. [Contributing](#contributing)
-9. [FES2022 Tide Model Setup](#fes2022-tide-model-setup)
+2. [Installation & Prerequisites](#installation--prerequisites)
+3. [Quick Start](#quick-start)
+   3.1 [Initialize a Project](#31-initialize-a-project)
+   3.2 [Run the Complete Analysis](#32-run-the-complete-analysis)
+   3.3 [Inspect Output](#33-inspect-output)
+4. [CLI Commands](#cli-commands)
+5. [Settings File (settings.json)](#settings-file-settingsjson)
+6. [Directory Structure](#directory-structure)
+7. [Contributing](#contributing)
 
 ---
 
@@ -25,33 +23,38 @@ Automate shoreline extraction and analysis using CoastSat via a simple CLI.
 
 This project is part of the Canadian Coastal Change project at NRCan, where we seek to gather a nationwide dataset explaining shoreline evolution around Canada’s coast over the past 40+ years. This CLI tool enables standardized analysis of AOIs using shoreline transects that track positional change. Landsat satellite imagery and tide correction via the FES2022 model are used to build consistent, validated shoreline time series.
 
-This CLI builds on the [CoastSat](https://github.com/kvos/coastsat) project, an open-source toolkit that uses 40+ years of Landsat and Sentinel-2 imagery to monitor shoreline change via Google Earth Engine.
-
 ---
 
-## Prerequisites
+## Installation & Prerequisites
 
-* Python 3.8 or higher (tested on 3.11).
-* [Miniforge](https://github.com/conda-forge/miniforge) — a minimal installer for Conda (with optional Mamba support).
-* Recommended: [Conda](https://docs.conda.io/en/latest/) or [Mamba](https://mamba.readthedocs.io/en/latest/) as your environment/package manager.
-* Key Python libraries:
+This CLI relies on several geospatial and scientific Python libraries. **You must install and use a Conda or Mamba environment.**
 
-  * `typer`, `tkinter`, `geopandas`, `shapely`, `matplotlib`, `scikit-image`, `pyfes`, `pyyaml`, `imageio`, `imageio-ffmpeg`, etc.
+### Required Tools
 
-> 💡 Miniforge is a lightweight way to install Conda or Mamba with conda-forge as the default channel. We recommend using it to avoid conflicts with the default Anaconda distribution.
+* **Miniforge** (recommended): A minimal installer for Conda or Mamba with conda-forge as default.
+* **Conda** or **Mamba**: For environment/package management.
+* **Python**: Version 3.8 or higher (tested on 3.11).
 
-Before proceeding, verify key imports:
+<details>
+<summary>What is Miniforge and how to install it?</summary>
 
-```bash
-python - <<EOF
-import json, geopandas, typer, tkinter, pyfes, numpy
-print("All required libraries imported successfully")
-EOF
-```
+[Miniforge](https://github.com/conda-forge/miniforge) is a lightweight installer that enables you to manage packages through **conda** or **mamba**, with full support for the **conda-forge** channel. This improves compatibility with geospatial and scientific packages.
 
----
+**Install Miniforge:**
 
-## Installation
+1. Go to [Miniforge GitHub Releases](https://github.com/conda-forge/miniforge#miniforge3).
+2. Download the installer for your operating system.
+3. Follow the installation instructions for your platform.
+
+Once installed, you can use `conda` or `mamba` from the terminal.
+
+</details>
+
+### Required Python Packages
+
+* `geopandas`, `shapely`, `matplotlib`, `scikit-image`, `rasterio`, `gdal`, `pyfes`, `pyyaml`, `typer`, `imageio`, `imageio-ffmpeg`, `tkinter`
+
+### Installation Steps
 
 1. **Clone this repository** and change into its folder:
 
@@ -60,33 +63,25 @@ EOF
    cd coastsat-cli
    ```
 
-2. **Create and activate a Conda environment** (recommended):
+2. **Create and activate a Conda environment**:
 
    ```bash
    conda create -n coastsat python=3.11
    conda activate coastsat
-   conda install geopandas gdal
+   conda install geopandas gdal rasterio
    conda install earthengine-api scikit-image matplotlib astropy notebook
    pip install pyqt5 imageio-ffmpeg
    conda install pyfes pyyaml typer
    ```
 
-   Or, using Mamba (if you’ve installed it via Miniforge):
+   Or, using Mamba:
 
    ```bash
    mamba create -n coastsat python=3.11
    mamba activate coastsat
-   mamba install geopandas gdal earthengine-api scikit-image matplotlib astropy notebook pyfes pyyaml typer
+   mamba install geopandas gdal rasterio earthengine-api scikit-image matplotlib astropy notebook pyfes pyyaml typer
    pip install pyqt5 imageio-ffmpeg
    ```
-
-3. **Install CoastSat CLI package**:
-
-   ```bash
-   pip install -e .
-   ```
-
-This installs “coastsat” on your PATH, giving you access to CLI commands such as `coastsat init`, `coastsat run`, and `coastsat show`.
 
 > ⚠️ If you encounter installation issues, try:
 >
@@ -131,10 +126,10 @@ Below is a minimal workflow. After installation, you will:
 2. Run the CoastSat analysis pipeline.
 3. Inspect results under the output directory.
 
-### 4.1 Initialize a Project
+### 3.1 Initialize a Project
 
 ```bash
-coastsat init
+python coastsatcli.py init
 ```
 
 You will be prompted to:
@@ -166,10 +161,10 @@ Structure:
 └── outputs/
 ```
 
-### 4.2 Run the Complete Analysis
+### 3.2 Run the Complete Analysis
 
 ```bash
-coastsat run --config path/to/<sitename>/settings.json
+python coastsatcli.py run --config path/to/<sitename>/settings.json
 ```
 
 This runs:
@@ -180,10 +175,10 @@ python Complete_Analysis.py --config path/to/settings.json
 
 Which downloads imagery, extracts shorelines, applies FES2022 tide correction, generates slope plots, and more.
 
-### 4.3 Inspect Output
+### 3.3 Inspect Output
 
 ```bash
-coastsat show --config path/to/<sitename>/settings.json
+python coastsatcli.py show --config path/to/<sitename>/settings.json
 ```
 
 Sample output:
@@ -205,7 +200,7 @@ outputs/
 ## CLI Commands
 
 ```
-Usage: coastsat [OPTIONS] COMMAND [ARGS]...
+Usage: python coastsatcli.py [OPTIONS] COMMAND [ARGS]...
 
 Options:
   --help  Show this message and exit.
@@ -281,32 +276,3 @@ Please follow the existing style:
 * Add tests or manual-validation instructions for new features.
 
 ---
-
-## FES2022 Tide Model Setup
-
-To apply tidal correction using the FES2022 model, you must download the required tide constituent files and provide a YAML configuration file that points to them.
-
-1. **Download FES2022 files**:
-   You must acquire the official FES2022 tide model from AVISO. Registration is required:
-   👉 [https://www.aviso.altimetry.fr/en/data/products/auxiliary-products/global-tide-fes.html](https://www.aviso.altimetry.fr/en/data/products/auxiliary-products/global-tide-fes.html)
-
-2. **Create a YAML config file** with paths to your local files:
-
-```yaml
-fes:
-  path: /path/to/fes2022
-  grid: fes2022_ocean_tide_loading_grid.nc
-  constituents:
-    - M2
-    - S2
-    - N2
-    - K1
-    - O1
-    - Q1
-    - K2
-    - M4
-```
-
-3. **Reference this config in your `settings.json`** using the `fes_config` key.
-
-> 🧠 Tip: For efficiency, you may crop your NetCDF files to a small bounding box around your AOIs before analysis.
