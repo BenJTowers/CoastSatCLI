@@ -163,13 +163,13 @@ def batch_shoreline_detection(metadata, settings, inputs):
     Returns the output dictionary.
     """
     # Preprocess images (cloud masking, pansharpening/down-sampling)
-    SDS_preprocess.save_jpg(metadata, settings, use_matplotlib=True)
+    #SDS_preprocess.save_jpg(metadata, settings, use_matplotlib=True)
     # create MP4 timelapse animation
-    print("[Step 4] Generating RGB time-lapse animation (this may take several minutes)...")
+    #print("[Step 4] Generating RGB time-lapse animation (this may take several minutes)...")
     fn_animation = os.path.join(inputs['filepath'], '%s_animation_RGB.gif'%inputs['sitename'])
     fp_images = os.path.join(inputs['filepath'], 'jpg_files', 'preprocessed')
     fps = 10 # frames per second in animation
-    SDS_tools.make_animation_mp4(fp_images, fps, fn_animation)
+    #SDS_tools.make_animation_mp4(fp_images, fps, fn_animation)
     try:
         filepath = settings['inputs']['filepath']
         with open(os.path.join(filepath, settings['inputs']['sitename'] + '_output' + '.pkl'), 'rb') as f:
@@ -308,6 +308,8 @@ def shoreline_analysis(output, settings):
     cross_distance = SDS_transects.compute_intersection_QC(
         output, transects, settings_transects
     )
+
+
 
     # Plot the time-series of cross-shore shoreline change
     if settings.get('save_figure', False):
@@ -728,7 +730,8 @@ def slope_estimation(settings, cross_distance, output):
                         'otsu_threshold':     [-.5,0],        # min and max intensity threshold use for contouring the shoreline
                         'plot_fig':           False,           # whether to plot the intermediate steps
                         }
-    cross_distance = SDS_transects.reject_outliers(cross_distance,output,settings_outliers)
+    #cross_distance = SDS_transects.reject_outliers(cross_distance,output,settings_outliers)
+    
 
 
 
@@ -862,7 +865,7 @@ def slope_estimation(settings, cross_distance, output):
             plt.close(fig)
             print(f"  → {key}: Estimated slope = {slope_est[key]:.3f} m (CI: {cis[key][0]:.4f} – {cis[key][1]:.4f})")
         except Exception as e:
-            print(f'Error processting transect {key}: {e}')
+            print(f'Error processing transect {key}: {e}')
             print(f"Setting default slope for transect {key} to 0.1 due to error.")
             slope_est[key], cis[key] = 0.1, (0.1, 0.1)
 
