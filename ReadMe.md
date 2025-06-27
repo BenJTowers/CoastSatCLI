@@ -7,7 +7,7 @@ Automate shoreline extraction and analysis using CoastSat via a simple CLI.
 ## Table of Contents
 
 1. [Overview](#overview)
-2. [Installation & Prerequisites](#installation--prerequisites)
+2. [Installation & Prerequisites](#installation--prerequisites) 
 3. [Quick Start](#quick-start)
    3.1 [Initialize a Project](#31-initialize-a-project)
    3.2 [Run the Complete Analysis](#32-run-the-complete-analysis)
@@ -117,6 +117,98 @@ gcloud auth application-default login
 ✅ Once authenticated, you're ready to initialize a CoastSat project.
 
 ---
+## 🌍 Step 3: FES2022 Tide Model setup
+
+This project uses the **FES2022 global tide model** to correct shoreline positions based on modeled tides at your AOI location. You’ll need to install the `pyfes` package and configure the model by downloading the required data and linking it in a `fes2022.yaml` file.
+
+### 3.1: Install `pyfes`
+
+If you're using a clean CoastSat environment as described above, `pyfes` should already be installed.
+
+If not, run:
+
+```bash
+conda install -c conda-forge pyfes
+```
+
+If you encounter conflicts (common with older environments), create a new Conda environment using the steps in the main installation section.
+
+---
+
+### 3.2: Download FES2022 NetCDF Files
+
+To use the tide model, download the required ocean and load tide components (NetCDF files).
+
+#### Option A: Direct Download (Recommended)
+
+Use this SFTP link in a client like **WinSCP**, **Cyberduck**, or another SFTP tool:
+
+```
+sftp://ftp-access.aviso.altimetry.fr:2221/auxiliary/tide_model/fes2022b
+```
+
+**Download the following folders:**
+
+* `/ocean_tide`
+* `/load_tide`
+
+You should end up with \~34 `.nc` files total across both folders. Do **not** use the `/ocean_tide_extrapolate` folder.
+
+#### Option B: Manual Access via AVISO Website
+
+1. Go to: [https://www.aviso.altimetry.fr](https://www.aviso.altimetry.fr)
+2. Create a user account and log in.
+3. Fill out the [FES model data access form](https://www.aviso.altimetry.fr/en/data/data-access/registration-form.html) (check **FES - Oceanic Tide Heights**).
+4. After approval, access your downloads via [My Products](https://www.aviso.altimetry.fr/en/my-aviso-plus/my-products.html).
+5. Use the SFTP link above to download the data.
+
+---
+
+### 3.3: Download and Configure `fes2022.yaml`
+
+Download the config file:
+
+👉 [fes2022.yaml from GitHub](https://github.com/CNES/aviso-fes/tree/main/data/fes2022b)
+
+Place it in the same directory as your downloaded `/ocean_tide` and `/load_tide` folders.
+
+Then, open `fes2022.yaml` in a text editor and **update the paths** to point to the exact locations of the NetCDF files on your system. Example (Windows-style):
+
+```yaml
+cartesian:
+  amplitude: amplitude
+  latitude: lat
+  longitude: lon
+  paths:
+    2N2: C:\Users\ben\Documents\fes2022b\load_tide\2n2_fes2022.nc
+    K1:  C:\Users\ben\Documents\fes2022b\load_tide\k1_fes2022.nc
+    M2:  C:\Users\ben\Documents\fes2022b\ocean_tide\m2_fes2022.nc
+```
+
+Make sure both `radial` and `cartesian` sections are fully updated. Use find-and-replace to quickly update the root path if needed.
+
+---
+
+### 3.4: Test the Setup (Optional)
+
+To verify that the tide model is correctly configured:
+
+```bash
+conda activate coastsat
+python
+```
+
+Then in Python:
+
+```python
+import pyfes
+handlers = pyfes.load_config("C:/path/to/fes2022.yaml")
+```
+
+If no error is returned after a few minutes, your setup is complete.
+
+😃 Your CoastSat project can now model tides globally using FES2022.
+
 
 ## Quick Start
 
