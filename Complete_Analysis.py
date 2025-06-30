@@ -166,10 +166,10 @@ def batch_shoreline_detection(metadata, settings, inputs):
     SDS_preprocess.save_jpg(metadata, settings, use_matplotlib=True)
     # create MP4 timelapse animation
     print("[Step 4] Generating RGB time-lapse animation (this may take several minutes)...")
-    fn_animation = os.path.join(inputs['filepath'], '%s_animation_RGB.gif'%inputs['sitename'])
+    #fn_animation = os.path.join(inputs['filepath'], '%s_animation_RGB.gif'%inputs['sitename'])
     fp_images = os.path.join(inputs['filepath'], 'jpg_files', 'preprocessed')
     fps = 10 # frames per second in animation
-    SDS_tools.make_animation_mp4(fp_images, fps, fn_animation)
+    #SDS_tools.make_animation_mp4(fp_images, fps, fn_animation)
     try:
         filepath = settings['inputs']['filepath']
         with open(os.path.join(filepath, settings['inputs']['sitename'] + '_output' + '.pkl'), 'rb') as f:
@@ -212,7 +212,7 @@ def batch_shoreline_detection(metadata, settings, inputs):
     fn_animation = os.path.join(inputs['filepath'], '%s_animation_shorelines.gif'%inputs['sitename'])
     fp_images = os.path.join(inputs['filepath'], 'jpg_files', 'detection')
     fps = 10 # frames per second in animation
-    SDS_tools.make_animation_mp4(fp_images, fps, fn_animation)
+    #SDS_tools.make_animation_mp4(fp_images, fps, fn_animation)
 
     # Plot the mapped shorelines
     if settings.get('save_figure', False):

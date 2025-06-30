@@ -40,92 +40,45 @@ from pylab import ginput
 from coastsat import SDS_tools, SDS_preprocess
 
 np.seterr(all='ignore') # raise/ignore divisions by 0 and nans
-
+import time
 # Main function for batch shoreline detection
 def extract_shorelines(metadata, settings):
     """
     Main function to extract shorelines from satellite images
-
-    KV WRL 2018
-
-    Arguments:
-    -----------
-    metadata: dict
-        contains all the information about the satellite images that were downloaded
-    settings: dict with the following keys
-        'inputs': dict
-            input parameters (sitename, filepath, polygon, dates, sat_list)
-        'cloud_thresh': float
-            value between 0 and 1 indicating the maximum cloud fraction in 
-            the cropped image that is accepted
-        'cloud_mask_issue': boolean
-            True if there is an issue with the cloud mask and sand pixels
-            are erroneously being masked on the image
-        'min_beach_area': int
-            minimum allowable object area (in metres^2) for the class 'sand',
-            the area is converted to number of connected pixels
-        'min_length_sl': int
-            minimum length (in metres) of shoreline contour to be valid
-        'sand_color': str
-            default', 'dark' (for grey/black sand beaches) or 'bright' (for white sand beaches)
-        'output_epsg': int
-            output spatial reference system as EPSG code
-        'check_detection': bool
-            if True, lets user manually accept/reject the mapped shorelines
-        'save_figure': bool
-            if True, saves a -jpg file for each mapped shoreline
-        'adjust_detection': bool
-            if True, allows user to manually adjust the detected shoreline
-        'pan_off': bool
-            if True, no pan-sharpening is performed on Landsat 7,8 and 9 imagery
-            are erroneously being masked on the images
-        's2cloudless_prob': float [0,100)
-            threshold to identify cloud pixels in the s2cloudless probability mask
-            
-    Returns:
-    -----------
-    output: dict
-        contains the extracted shorelines and corresponding dates + metadata
-
     """
+    start_total = time.time()
 
     sitename = settings['inputs']['sitename']
     filepath_data = settings['inputs']['filepath']
     filepath_models = os.path.join(os.getcwd(), 'classification', 'models')
-    # initialise output structure
     output = dict([])
-    # create a subfolder to store the .jpg images showing the detection
     filepath_jpg = os.path.join(filepath_data, 'jpg_files', 'detection')
     if not os.path.exists(filepath_jpg):
-            os.makedirs(filepath_jpg)
-    # close all open figures
+        os.makedirs(filepath_jpg)
     plt.close('all')
 
     print('Mapping shorelines:')
-    
     default_min_length_sl = settings['min_length_sl']
-    # loop through satellite list
+
     for satname in metadata.keys():
+        sat_start = time.time()
 
-
-        # get images
         filepath = SDS_tools.get_filepath(settings['inputs'],satname)
         filenames = metadata[satname]['filenames']
 
-        # initialise the output variables
-        output_timestamp = []  # datetime at which the image was acquired (UTC time)
-        output_shoreline = []  # vector of shoreline points
-        output_filename = []   # filename of the images from which the shorelines where derived
-        output_cloudcover = [] # cloud cover of the images
-        output_geoaccuracy = []# georeferencing accuracy of the images
-        output_idxkeep = []    # index that were kept during the analysis (cloudy images are skipped)
-        output_t_mndwi = []    # MNDWI threshold used to map the shoreline
+        output_timestamp = []
+        output_shoreline = []
+        output_filename = []
+        output_cloudcover = []
+        output_geoaccuracy = []
+        output_idxkeep = []
+        output_t_mndwi = []
 
-        # load classifiers (if sklearn version above 0.20, learn the new files)
         str_new = ''
         if not sklearn.__version__[:4] == '0.20':
             str_new = '_new'
 
+        load_model_start = time.time()
         if satname in ['L5','L7','L8','L9']:
             pixel_size = 15
             if settings['sand_color'] == 'dark':
@@ -139,99 +92,75 @@ def extract_shorelines(metadata, settings):
         elif satname == 'S2':
             pixel_size = 10
             clf = joblib.load(os.path.join(filepath_models, 'NN_4classes_S2%s.pkl'%str_new))
+        print(f"Model loading took {time.time() - load_model_start:.2f} seconds")
 
-        # convert settings['min_beach_area'] from metres to pixels
         min_beach_area_pixels = np.ceil(settings['min_beach_area']/pixel_size**2)
-        # reduce min shoreline length for L7 because of the diagonal bands
-        if satname == 'L7': settings['min_length_sl'] = 200
-        else: settings['min_length_sl'] = default_min_length_sl
-        
-        # loop through the images
+        settings['min_length_sl'] = 200 if satname == 'L7' else default_min_length_sl
+
         for i in range(len(filenames)):
-
             print('\r%s:   %d%%' % (satname,int(((i+1)/len(filenames))*100)), end='')
-            # get image filename
-            fn = SDS_tools.get_filenames(filenames[i],filepath, satname)
 
-            # preprocess image (cloud mask + pansharpening/downsampling)
-            im_ms, georef, cloud_mask, im_extra, im_QA, im_nodata = SDS_preprocess.preprocess_single(fn, satname, 
-                                                                                                     settings['cloud_mask_issue'], 
-                                                                                                     settings['pan_off'],
-                                                                                                     settings['s2cloudless_prob'])
-            
+            fn = SDS_tools.get_filenames(filenames[i], filepath, satname)
+            prep_start = time.time()
+            im_ms, georef, cloud_mask, im_extra, im_QA, im_nodata = SDS_preprocess.preprocess_single(
+                fn, satname, settings['cloud_mask_issue'], settings['pan_off'], settings['s2cloudless_prob'])
+            print(f"  | Preprocessing: {time.time() - prep_start:.2f}s", end='')
 
-            # get image spatial reference system (epsg code) from metadata dict
             image_epsg = metadata[satname]['epsg'][i]
-            
 
-            # compute cloud_cover percentage (with no data pixels)
             cloud_cover_combined = np.divide(sum(sum(cloud_mask.astype(int))),
-                                    (cloud_mask.shape[0]*cloud_mask.shape[1]))
-            if cloud_cover_combined > 0.99: # if 99% of cloudy pixels in image skip
+                                             (cloud_mask.shape[0]*cloud_mask.shape[1]))
+            if cloud_cover_combined > 0.99:
                 continue
-            # remove no data pixels from the cloud mask 
-            # (for example L7 bands of no data should not be accounted for)
-            cloud_mask_adv = np.logical_xor(cloud_mask, im_nodata) 
-            # compute updated cloud cover percentage (without no data pixels)
+            cloud_mask_adv = np.logical_xor(cloud_mask, im_nodata)
             cloud_cover = np.divide(sum(sum(cloud_mask_adv.astype(int))),
                                     (sum(sum((~im_nodata).astype(int)))))
-            # skip image if cloud cover is above user-defined threshold
             if cloud_cover > settings['cloud_thresh']:
                 continue
-            
 
-            # calculate a buffer around the reference shoreline (if any has been digitised)
+            buffer_start = time.time()
             im_ref_buffer = create_shoreline_buffer(cloud_mask.shape, georef, image_epsg,
                                                     pixel_size, settings)
+            print(f"  | Buffer: {time.time() - buffer_start:.2f}s", end='')
 
-            # classify image in 4 classes (sand, whitewater, water, other) with NN classifier
+            classify_start = time.time()
             im_classif, im_labels = classify_image_NN(im_ms, cloud_mask, min_beach_area_pixels, clf)
+            print(f"  | Classify: {time.time() - classify_start:.2f}s", end='')
 
-            # if adjust_detection is True, let the user adjust the detected shoreline
+            map_start = time.time()
             if settings['adjust_detection']:
                 date = filenames[i][:19]
                 skip_image, shoreline, t_mndwi = adjust_detection(im_ms, cloud_mask, im_nodata, im_labels,
                                                                   im_ref_buffer, image_epsg, georef,
                                                                   settings, date, satname)
-                # if the user decides to skip the image, continue and do not save the mapped shoreline
                 if skip_image:
                     continue
-                
-            # otherwise map the contours automatically with one of the two following functions:
-            # if there are pixels in the 'sand' class --> use find_wl_contours2 (enhanced)
-            # otherwise use find_wl_contours1 (traditional)
             else:
-                try: # use try/except structure for long runs
-                    if sum(im_labels[im_ref_buffer,0]) < 50: # minimum number of sand pixels
-                        # compute MNDWI image (SWIR-G)
+                try:
+                    if sum(im_labels[im_ref_buffer,0]) < 50:
                         im_mndwi = SDS_tools.nd_index(im_ms[:,:,4], im_ms[:,:,1], cloud_mask)
-                        # find water contours on MNDWI grayscale image
                         contours_mwi, t_mndwi = find_wl_contours1(im_mndwi, cloud_mask, im_ref_buffer)
                     else:
-                        # use classification to refine threshold and extract the sand/water interface
                         contours_mwi, t_mndwi = find_wl_contours2(im_ms, im_labels, cloud_mask, im_ref_buffer)
                 except Exception as e:
                     print(f'Could not map shoreline for this image: {filenames[i]}, reason: {e}')
                     continue
+            print(f"  | Map shoreline: {time.time() - map_start:.2f}s")
 
-                # process the water contours into a shoreline
-                shoreline = process_shoreline(contours_mwi, cloud_mask_adv, im_nodata,
-                                              georef, image_epsg, settings)
+            process_start = time.time()
+            shoreline = process_shoreline(contours_mwi, cloud_mask_adv, im_nodata,
+                                          georef, image_epsg, settings)
+            print(f"  | Process: {time.time() - process_start:.2f}s")
 
-                # visualise the mapped shorelines, there are two options:
-                # if settings['check_detection'] = True, shows the detection to the user for accept/reject
-                # if settings['save_figure'] = True, saves a figure for each mapped shoreline
-                if settings['check_detection'] or settings['save_figure']:
-                    date = filenames[i][:19]
-                    if not settings['check_detection']:
-                        plt.ioff() # turning interactive plotting off
-                    skip_image = show_detection(im_ms, cloud_mask, im_labels, shoreline,
-                                                image_epsg, georef, settings, date, satname)
-                    # if the user decides to skip the image, continue and do not save the mapped shoreline
-                    if skip_image:
-                        continue
+            if settings['check_detection'] or settings['save_figure']:
+                date = filenames[i][:19]
+                if not settings['check_detection']:
+                    plt.ioff()
+                skip_image = show_detection(im_ms, cloud_mask, im_labels, shoreline,
+                                            image_epsg, georef, settings, date, satname)
+                if skip_image:
+                    continue
 
-            # append to output variables
             output_timestamp.append(metadata[satname]['dates'][i])
             output_shoreline.append(shoreline)
             output_filename.append(filenames[i])
@@ -240,32 +169,28 @@ def extract_shorelines(metadata, settings):
             output_idxkeep.append(i)
             output_t_mndwi.append(t_mndwi)
 
-        # create dictionary of output
         output[satname] = {
-                'dates': output_timestamp,
-                'shorelines': output_shoreline,
-                'filename': output_filename,
-                'cloud_cover': output_cloudcover,
-                'geoaccuracy': output_geoaccuracy,
-                'idx': output_idxkeep,
-                'MNDWI_threshold': output_t_mndwi,
-                }
-        print('')
+            'dates': output_timestamp,
+            'shorelines': output_shoreline,
+            'filename': output_filename,
+            'cloud_cover': output_cloudcover,
+            'geoaccuracy': output_geoaccuracy,
+            'idx': output_idxkeep,
+            'MNDWI_threshold': output_t_mndwi,
+        }
+        print(f"\n{satname} batch took {time.time() - sat_start:.2f} seconds\n")
 
-    # close figure window if still open
     if plt.get_fignums():
         plt.close()
 
-    # change the format to have one list sorted by date with all the shorelines (easier to use)
     output = SDS_tools.merge_output(output)
 
-    # save outputput structure as output.pkl
     filepath = filepath_data
     with open(os.path.join(filepath, sitename + '_output.pkl'), 'wb') as f:
         pickle.dump(output, f)
 
+    print(f"Total extraction time: {time.time() - start_total:.2f} seconds")
     return output
-
 ###################################################################################################
 # IMAGE CLASSIFICATION FUNCTIONS
 ###################################################################################################
@@ -669,97 +594,144 @@ def process_contours(contours):
     
     return contours_nonans
     
+# def process_shoreline(contours, cloud_mask, im_nodata, georef, image_epsg, settings):
+#     """
+#     Converts the contours from image coordinates to world coordinates. This function also removes the contours that:
+#         1. are too small to be a shoreline (based on the parameter settings['min_length_sl'])
+#         2. are too close to cloud pixels (based on the parameter settings['dist_clouds'])
+#         3. are adjacent to noData pixels
+    
+#     KV WRL 2018
+
+#     Arguments:
+#     -----------
+#         contours: np.array or list of np.array
+#             image contours as detected by the function find_contours
+#         cloud_mask: np.array
+#             2D cloud mask with True where cloud pixels are
+#         im_nodata: np.array
+#             2D mask with True where noData pixels are
+#         georef: np.array
+#             vector of 6 elements [Xtr, Xscale, Xshear, Ytr, Yshear, Yscale]
+#         image_epsg: int
+#             spatial reference system of the image from which the contours were extracted
+#         settings: dict
+#             contains the following fields:
+#         output_epsg: int
+#             output spatial reference system
+#         min_length_sl: float
+#             minimum length of shoreline perimeter to be kept (in meters)
+#         dist_clouds: int
+#             distance in metres defining a buffer around cloudy pixels where the shoreline cannot be mapped
+
+#     Returns:    
+#     -----------
+#         shoreline: np.array
+#             array of points with the X and Y coordinates of the shoreline
+
+#     """
+
+#     # convert pixel coordinates to world coordinates
+#     contours_world = SDS_tools.convert_pix2world(contours, georef)
+#     # convert world coordinates to desired spatial reference system
+#     contours_epsg = SDS_tools.convert_epsg(contours_world, image_epsg, settings['output_epsg'])
+    
+#     # 1. Remove contours that have a perimeter < min_length_sl (provided in settings dict)
+#     # this enables to remove the very small contours that do not correspond to the shoreline
+#     contours_long = []
+#     for l, wl in enumerate(contours_epsg):
+#         coords = [(wl[k,0], wl[k,1]) for k in range(len(wl))]
+#         a = LineString(coords) # shapely LineString structure
+#         if a.length >= settings['min_length_sl']:
+#             contours_long.append(wl)
+#     # format points into np.array
+#     x_points = np.array([])
+#     y_points = np.array([])
+#     for k in range(len(contours_long)):
+#         x_points = np.append(x_points,contours_long[k][:,0])
+#         y_points = np.append(y_points,contours_long[k][:,1])
+#     contours_array = np.transpose(np.array([x_points,y_points]))
+    
+#     shoreline = contours_array
+    
+#     # 2. Remove any shoreline points that are close to cloud pixels (effect of shadows)
+#     if sum(sum(cloud_mask)) > 0:
+#         # get the coordinates of the cloud pixels
+#         idx_cloud = np.where(cloud_mask)
+#         idx_cloud = np.array([(idx_cloud[0][k], idx_cloud[1][k]) for k in range(len(idx_cloud[0]))])
+#         # convert to world coordinates and same epsg as the shoreline points
+#         coords_cloud = SDS_tools.convert_epsg(SDS_tools.convert_pix2world(idx_cloud, georef),
+#                                                image_epsg, settings['output_epsg'])
+#         # only keep the shoreline points that are at least 30m from any cloud pixel
+#         idx_keep = np.ones(len(shoreline)).astype(bool)
+#         for k in range(len(shoreline)):
+#             if np.any(np.linalg.norm(shoreline[k,:] - coords_cloud, axis=1) < settings['dist_clouds']):
+#                 idx_keep[k] = False     
+#         shoreline = shoreline[idx_keep] 
+        
+#     # 3. Remove any shoreline points that are attached to nodata pixels
+#     if sum(sum(im_nodata)) > 0:
+#         # get the coordinates of the cloud pixels
+#         idx_cloud = np.where(im_nodata)
+#         idx_cloud = np.array([(idx_cloud[0][k], idx_cloud[1][k]) for k in range(len(idx_cloud[0]))])
+#         # convert to world coordinates and same epsg as the shoreline points
+#         coords_cloud = SDS_tools.convert_epsg(SDS_tools.convert_pix2world(idx_cloud, georef),
+#                                                image_epsg, settings['output_epsg'])
+#         # only keep the shoreline points that are at least 30m from any nodata pixel
+#         idx_keep = np.ones(len(shoreline)).astype(bool)
+#         for k in range(len(shoreline)):
+#             if np.any(np.linalg.norm(shoreline[k,:] - coords_cloud, axis=1) < 30):
+#                 idx_keep[k] = False     
+#         shoreline = shoreline[idx_keep] 
+
+#     return shoreline
+
+from scipy.spatial import cKDTree
+
 def process_shoreline(contours, cloud_mask, im_nodata, georef, image_epsg, settings):
     """
-    Converts the contours from image coordinates to world coordinates. This function also removes the contours that:
-        1. are too small to be a shoreline (based on the parameter settings['min_length_sl'])
-        2. are too close to cloud pixels (based on the parameter settings['dist_clouds'])
-        3. are adjacent to noData pixels
-    
-    KV WRL 2018
+    Converts contours from image to world coordinates and filters based on:
+      1. Minimum shoreline length
+      2. Proximity to clouds
+      3. Proximity to nodata pixels
 
-    Arguments:
-    -----------
-        contours: np.array or list of np.array
-            image contours as detected by the function find_contours
-        cloud_mask: np.array
-            2D cloud mask with True where cloud pixels are
-        im_nodata: np.array
-            2D mask with True where noData pixels are
-        georef: np.array
-            vector of 6 elements [Xtr, Xscale, Xshear, Ytr, Yshear, Yscale]
-        image_epsg: int
-            spatial reference system of the image from which the contours were extracted
-        settings: dict
-            contains the following fields:
-        output_epsg: int
-            output spatial reference system
-        min_length_sl: float
-            minimum length of shoreline perimeter to be kept (in meters)
-        dist_clouds: int
-            distance in metres defining a buffer around cloudy pixels where the shoreline cannot be mapped
-
-    Returns:    
-    -----------
-        shoreline: np.array
-            array of points with the X and Y coordinates of the shoreline
-
+    Returns:
+        shoreline: np.array of valid shoreline points in world coordinates
     """
 
-    # convert pixel coordinates to world coordinates
+    # Step 1: Convert contours to world coordinates and reproject
     contours_world = SDS_tools.convert_pix2world(contours, georef)
-    # convert world coordinates to desired spatial reference system
     contours_epsg = SDS_tools.convert_epsg(contours_world, image_epsg, settings['output_epsg'])
-    
-    # 1. Remove contours that have a perimeter < min_length_sl (provided in settings dict)
-    # this enables to remove the very small contours that do not correspond to the shoreline
-    contours_long = []
-    for l, wl in enumerate(contours_epsg):
-        coords = [(wl[k,0], wl[k,1]) for k in range(len(wl))]
-        a = LineString(coords) # shapely LineString structure
-        if a.length >= settings['min_length_sl']:
-            contours_long.append(wl)
-    # format points into np.array
-    x_points = np.array([])
-    y_points = np.array([])
-    for k in range(len(contours_long)):
-        x_points = np.append(x_points,contours_long[k][:,0])
-        y_points = np.append(y_points,contours_long[k][:,1])
-    contours_array = np.transpose(np.array([x_points,y_points]))
-    
-    shoreline = contours_array
-    
-    # 2. Remove any shoreline points that are close to cloud pixels (effect of shadows)
-    if sum(sum(cloud_mask)) > 0:
-        # get the coordinates of the cloud pixels
-        idx_cloud = np.where(cloud_mask)
-        idx_cloud = np.array([(idx_cloud[0][k], idx_cloud[1][k]) for k in range(len(idx_cloud[0]))])
-        # convert to world coordinates and same epsg as the shoreline points
-        coords_cloud = SDS_tools.convert_epsg(SDS_tools.convert_pix2world(idx_cloud, georef),
-                                               image_epsg, settings['output_epsg'])
-        # only keep the shoreline points that are at least 30m from any cloud pixel
-        idx_keep = np.ones(len(shoreline)).astype(bool)
-        for k in range(len(shoreline)):
-            if np.any(np.linalg.norm(shoreline[k,:] - coords_cloud, axis=1) < settings['dist_clouds']):
-                idx_keep[k] = False     
-        shoreline = shoreline[idx_keep] 
-        
-    # 3. Remove any shoreline points that are attached to nodata pixels
-    if sum(sum(im_nodata)) > 0:
-        # get the coordinates of the cloud pixels
-        idx_cloud = np.where(im_nodata)
-        idx_cloud = np.array([(idx_cloud[0][k], idx_cloud[1][k]) for k in range(len(idx_cloud[0]))])
-        # convert to world coordinates and same epsg as the shoreline points
-        coords_cloud = SDS_tools.convert_epsg(SDS_tools.convert_pix2world(idx_cloud, georef),
-                                               image_epsg, settings['output_epsg'])
-        # only keep the shoreline points that are at least 30m from any nodata pixel
-        idx_keep = np.ones(len(shoreline)).astype(bool)
-        for k in range(len(shoreline)):
-            if np.any(np.linalg.norm(shoreline[k,:] - coords_cloud, axis=1) < 30):
-                idx_keep[k] = False     
-        shoreline = shoreline[idx_keep] 
+
+    # Step 2: Remove short contours
+    contours_long = [wl for wl in contours_epsg
+                     if LineString([(x, y) for x, y in wl]).length >= settings['min_length_sl']]
+
+    # Combine long contours into single array
+    if not contours_long:
+        return np.empty((0, 2))
+    shoreline = np.vstack(contours_long)
+
+    # Step 3: Remove shoreline points close to cloud pixels
+    if cloud_mask.any():
+        cloud_idx = np.column_stack(np.where(cloud_mask))
+        cloud_coords = SDS_tools.convert_pix2world(cloud_idx, georef)
+        cloud_coords = SDS_tools.convert_epsg(cloud_coords, image_epsg, settings['output_epsg'])
+        cloud_tree = cKDTree(cloud_coords)
+        keep = cloud_tree.query(shoreline, distance_upper_bound=settings['dist_clouds'])[0] == np.inf
+        shoreline = shoreline[keep]
+
+    # Step 4: Remove shoreline points close to nodata pixels
+    if im_nodata.any():
+        nodata_idx = np.column_stack(np.where(im_nodata))
+        nodata_coords = SDS_tools.convert_pix2world(nodata_idx, georef)
+        nodata_coords = SDS_tools.convert_epsg(nodata_coords, image_epsg, settings['output_epsg'])
+        nodata_tree = cKDTree(nodata_coords)
+        keep = nodata_tree.query(shoreline, distance_upper_bound=30)[0] == np.inf
+        shoreline = shoreline[keep]
 
     return shoreline
+
 
 ###################################################################################################
 # INTERACTIVE/PLOTTING FUNCTIONS
