@@ -15,6 +15,7 @@ import pdb
 import skimage.filters as filters
 import skimage.measure as measure
 import skimage.morphology as morphology
+from scipy.spatial import cKDTree
 
 # machine learning modules
 import sklearn
@@ -59,6 +60,9 @@ def extract_shorelines(metadata, settings):
 
     print('Mapping shorelines:')
     default_min_length_sl = settings['min_length_sl']
+
+    # Cache to avoid recomputing identical shoreline buffers
+    buffer_cache = {}
 
     for satname in metadata.keys():
         sat_start = time.time()
@@ -119,8 +123,15 @@ def extract_shorelines(metadata, settings):
                 continue
 
             buffer_start = time.time()
-            im_ref_buffer = create_shoreline_buffer(cloud_mask.shape, georef, image_epsg,
-                                                    pixel_size, settings)
+            buffer_key = (tuple(cloud_mask.shape), tuple(np.round(georef, 6)))
+
+            if buffer_key in buffer_cache:
+                print("  | Buffer (cached)", end='')
+                im_ref_buffer = buffer_cache[buffer_key]
+            else:
+                print("  | Buffer (computed)", end='')
+                im_ref_buffer = create_shoreline_buffer(cloud_mask.shape, georef, image_epsg, settings)
+                buffer_cache[buffer_key] = im_ref_buffer
             print(f"  | Buffer: {time.time() - buffer_start:.2f}s", end='')
 
             classify_start = time.time()
@@ -515,13 +526,33 @@ def find_wl_contours2(im_ms, im_labels, cloud_mask, im_ref_buffer):
 
 #     return im_buffer
 
-def create_shoreline_buffer(im_shape, georef, image_epsg, pixel_size, settings):
+def create_shoreline_buffer(im_shape, georef, image_epsg, settings):
     """
-    Fast version using shapely and rasterio to create a buffer mask around reference shorelines.
+    Creates a binary mask representing a buffer zone around each reference shoreline. 
+    This buffer is computed using Shapely and rasterized using Rasterio for performance.
+    
+    Arguments:
+    -----------
+    im_shape: np.array
+        Shape of the image (rows, columns)
+    georef: np.array
+        Georeferencing transform [Xtr, Xscale, Xshear, Ytr, Yshear, Yscale]
+    image_epsg: int
+        EPSG code of the image's coordinate reference system
+    settings: dict with the following keys
+        'output_epsg': int
+            EPSG code of the reference shoreline coordinate system
+        'reference_shoreline': list of np.array
+            List of arrays with coordinates for each reference shoreline
+        'max_dist_ref': int
+            Buffer radius in meters to apply around the reference shorelines
 
     Returns:
-        im_buffer: np.array (dtype=bool) - True where buffer exists, False elsewhere
+    -----------
+    im_buffer: np.array (dtype=bool)
+        Binary mask where True indicates buffered shoreline area and False elsewhere
     """
+
     # Default to empty binary mask
     im_buffer = np.zeros(im_shape, dtype='uint8')
 
@@ -686,17 +717,37 @@ def process_contours(contours):
 
 #     return shoreline
 
-from scipy.spatial import cKDTree
+
 
 def process_shoreline(contours, cloud_mask, im_nodata, georef, image_epsg, settings):
     """
-    Converts contours from image to world coordinates and filters based on:
-      1. Minimum shoreline length
-      2. Proximity to clouds
-      3. Proximity to nodata pixels
+    Processes detected shoreline contours by converting them to world coordinates and 
+    applying filters based on shoreline length, cloud proximity, and nodata proximity.
+
+    Arguments:
+    -----------
+    contours: list of np.array
+        List of shoreline contours in pixel coordinates
+    cloud_mask: np.array (dtype=bool)
+        Binary mask where True indicates cloud-covered pixels
+    im_nodata: np.array (dtype=bool)
+        Binary mask where True indicates nodata pixels (e.g., masked water or artifacts)
+    georef: np.array
+        Georeferencing transform [Xtr, Xscale, Xshear, Ytr, Yshear, Yscale]
+    image_epsg: int
+        EPSG code of the image’s native coordinate reference system
+    settings: dict with the following keys
+        'output_epsg': int
+            Desired output coordinate system for shoreline points
+        'min_length_sl': float
+            Minimum contour length in meters to be considered valid
+        'dist_clouds': float
+            Minimum allowed distance from cloud pixels in meters
 
     Returns:
-        shoreline: np.array of valid shoreline points in world coordinates
+    -----------
+    shoreline: np.array
+        Array of shoreline points (x, y) in output CRS, after filtering
     """
 
     # Step 1: Convert contours to world coordinates and reproject
