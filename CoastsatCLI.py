@@ -134,7 +134,7 @@ def get_transect_settings_from_user() -> dict:
     if typer.confirm("→ Do you want to customize transect settings?", default=False):
         spacing = typer.prompt("  Enter transect spacing (m)", default=100.0)
         length = typer.prompt("  Enter transect length (m)", default=200.0)
-        offset_ratio = typer.prompt("  Enter transect offset ratio (e.g., 0.75)", default=0.75)
+        offset_ratio = typer.prompt("  Enter transect offset ratio (e.g., 0.75 = 75% over water and 25% over land)", default=0.75)
         skip_threshold = typer.prompt("  Enter transect skip threshold (m)", default=300.0)
     else:
         spacing = 100.0

@@ -6,7 +6,6 @@
 *.jpeg
 *.mp4
 *.jpg
-*.pkl
 *.kml
 *.txt
 *.geojson
