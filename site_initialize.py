@@ -17,7 +17,11 @@ def initialize_single_site(
     shoreline_path: str,
     fes_config_path: str,
     base_dir: str,
-    preloaded_shoreline: gpd.GeoDataFrame = None
+    preloaded_shoreline: gpd.GeoDataFrame = None,
+    transect_spacing: float = 100.0,
+    transect_length: float = 200.0,
+    transect_offset_ratio: float = 0.75,
+    transect_skip_threshold: float = 300.0
 ) -> dict:
     """
     Creates a CoastSat project from a single AOI and a larger shoreline.
@@ -85,7 +89,7 @@ def initialize_single_site(
     # Generate transects
     typer.echo("→ Generating transects…")
     reference_projected = reference_gdf.to_crs(epsg=auto_epsg)
-    transects_gdf = generate_transects_along_line(reference_projected, spacing=100, length=200, offset_ratio=0.75)
+    transects_gdf = generate_transects_along_line(reference_projected, spacing=transect_spacing, length=transect_length, offset_ratio=transect_offset_ratio, skip_threshold=transect_skip_threshold)
     transects_gdf.to_file(transects_out_path, driver="GeoJSON")
     typer.secho(f"  ✓ Transects saved to {transects_out_path}", fg=typer.colors.GREEN)
 

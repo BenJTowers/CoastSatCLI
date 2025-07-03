@@ -30,7 +30,7 @@ def closest_intersection(segment: LineString, shoreline_union, origin_point: Poi
     return None
 
 
-def generate_transects_along_line(clipped_gdf: gpd.GeoDataFrame, spacing=50, length=200, offset_ratio=0.5, skip_threshold=300.0, min_valid_transect=50.0) -> gpd.GeoDataFrame:
+def generate_transects_along_line(clipped_gdf: gpd.GeoDataFrame, spacing=50, length=200, offset_ratio=0.75, skip_threshold=300.0, min_valid_transect=50.0) -> gpd.GeoDataFrame:
     """Generate perpendicular transects at fixed spacing along the dissolved shoreline.
 
     offset_ratio: proportion of transect extending landward (e.g., 0.25 = 25% landward, 75% seaward)

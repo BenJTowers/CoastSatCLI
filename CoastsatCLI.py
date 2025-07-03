@@ -130,6 +130,24 @@ def prompt_and_run_analysis(settings_paths: list[str]):
         else:
             typer.secho(f"  ❌ {sitename} failed with exit code {result.returncode}.", fg=typer.colors.RED)
 
+def get_transect_settings_from_user() -> dict:
+    if typer.confirm("→ Do you want to customize transect settings?", default=False):
+        spacing = typer.prompt("  Enter transect spacing (m)", default=100.0)
+        length = typer.prompt("  Enter transect length (m)", default=200.0)
+        offset_ratio = typer.prompt("  Enter transect offset ratio (e.g., 0.75)", default=0.75)
+        skip_threshold = typer.prompt("  Enter transect skip threshold (m)", default=300.0)
+    else:
+        spacing = 100.0
+        length = 200.0
+        offset_ratio = 0.75
+        skip_threshold = 300.0
+
+    return {
+        "transect_spacing": spacing,
+        "transect_length": length,
+        "transect_offset_ratio": offset_ratio,
+        "transect_skip_threshold": skip_threshold
+    }
 
 @app.command(
     "init",
@@ -188,7 +206,7 @@ def init():
         # 6) Prompt for multiple AOI KML files
         typer.echo("\n→ Step 5: Select your AOI KML files.")
         aoi_srcs = choose_file_multiple("Select AOI KML files")
-        
+        transect_settings = get_transect_settings_from_user()
         settings_paths = []
         for i, aoi_src in enumerate(aoi_srcs):
             full_sitename = f"{sitename}_{str(i+1).zfill(3)}"
@@ -199,7 +217,11 @@ def init():
                 shoreline_path=shoreline_src,
                 fes_config_path=fes_config_path,
                 base_dir=project_dir,
-                preloaded_shoreline=shoreline_gdf
+                preloaded_shoreline=shoreline_gdf,
+                transect_spacing=transect_settings["transect_spacing"],
+                transect_length=transect_settings["transect_length"],
+                transect_offset_ratio=transect_settings["transect_offset_ratio"],
+                transect_skip_threshold=transect_settings["transect_skip_threshold"]
             )
             settings_paths.append(site_info['settings_path'])
 
@@ -218,7 +240,7 @@ def init():
         # 6) Prompt for single AOI KML file
         typer.echo("\n→ Step 5: Select your AOI KML file.")
         aoi_src = choose_file("Select AOI KML", filetypes=[("KML files", "*.kml")])
-        
+        transect_settings = get_transect_settings_from_user()
         # Initialize single site
         site_info = initialize_single_site(
             aoi_path=aoi_src,
@@ -226,7 +248,11 @@ def init():
             shoreline_path=shoreline_src,
             fes_config_path=fes_config_path,
             base_dir=project_dir,
-            preloaded_shoreline=shoreline_gdf
+            preloaded_shoreline=shoreline_gdf,
+            transect_spacing=transect_settings["transect_spacing"],
+            transect_length=transect_settings["transect_length"],
+            transect_offset_ratio=transect_settings["transect_offset_ratio"],
+            transect_skip_threshold=transect_settings["transect_skip_threshold"]
         )
 
         typer.secho("\n✅ Project initialized successfully!\n", fg=typer.colors.CYAN, bold=True)
