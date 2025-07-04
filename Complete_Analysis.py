@@ -141,22 +141,6 @@ def initial_settings(config):
     return inputs, settings, metadata
 
 
-def retrieve_images(inputs):
-    """
-    Retrieve images from GEE and load metadata.
-    """
-    # Before downloading the images, check how many images are available for your inputs
-    SDS_download.check_images_available(inputs)
-
-    # Retrieve satellite images from GEE
-    metadata = SDS_download.retrieve_images(inputs)
-
-    # If you have already downloaded the images, just load the metadata file
-    metadata = SDS_download.get_metadata(inputs)
-
-    return metadata
-
-
 def batch_shoreline_detection(metadata, settings, inputs):
     """
     Perform batch shoreline detection.
