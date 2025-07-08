@@ -7,7 +7,9 @@ import tkinter as tk
 import geopandas as gpd
 from tkinter import filedialog, messagebox
 from pathlib import Path
+from datetime import datetime
 from site_initialize import initialize_single_site
+from reference_shoreline_and_transect_builder import generate_transects_along_line
 
 app = typer.Typer(
     help="CoastSat CLI: initialize projects, run analysis, and inspect outputs.",
@@ -259,6 +261,108 @@ def init():
 
         # 7) Run analysis immediately
         prompt_and_run_analysis([site_info['settings_path']])
+
+@app.command("site-rerun", help="Rerun a previously initialized CoastSat site with updated inputs.")
+def site_rerun():
+    """
+    Allows rerunning an existing CoastSat site with the option to override shoreline,
+    transects, or transect settings. This is useful for refining results after an
+    unsatisfactory run. Note: The config file remains unchanged in structure — only 
+    input files are replaced or regenerated.
+    """
+    typer.secho("\n=== CoastSat Site Rerun ===", fg=typer.colors.CYAN, bold=True)
+
+    # Step 1: Select settings.json
+    typer.echo("→ Step 1: Select the existing project's settings.json file.")
+    settings_path = choose_file("Select settings.json", filetypes=[("JSON files", "*.json")])
+    base_dir = Path(settings_path).parent
+
+    # Step 2: Load config
+    try:
+        with open(settings_path, "r") as f:
+            config = json.load(f)
+    except Exception as e:
+        typer.secho(f"❌ Failed to load settings.json: {e}", fg=typer.colors.RED)
+        raise typer.Exit()
+
+    typer.secho(f"  ✓ Loaded settings for site: {config['inputs']['sitename']}\n", fg=typer.colors.GREEN)
+
+    # Track what needs regeneration
+    regenerate_transects = False
+    transect_settings = None
+
+    # Step 3: Override options
+    typer.echo("→ Step 2: Would you like to override any of the following inputs?")
+
+    if typer.confirm("  • Reference shoreline file?", default=False):
+        ref_path = choose_file("Select new reference shoreline", filetypes=[("GeoJSON", "*.geojson"), ("Shapefile", "*.shp")])
+        config["inputs"]["reference_shoreline"] = str(Path(ref_path).resolve())
+        regenerate_transects = True
+
+    if typer.confirm("  • Transects file?", default=False):
+        transects_path = choose_file("Select new transects file", filetypes=[("GeoJSON", "*.geojson"), ("Shapefile", "*.shp")])
+        config["inputs"]["transects"] = str(Path(transects_path).resolve())
+        regenerate_transects = False  # Don't regenerate if user chose a file manually
+
+    if typer.confirm("  • Change transect settings?", default=False):
+        transect_settings = get_transect_settings_from_user()
+        regenerate_transects = True
+
+    # Step 4: Optionally clear previous outputs
+    output_dir = Path(os.path.join(base_dir, "outputs"))
+    if output_dir.exists() and typer.confirm("\nDo you want to clear previous outputs (this will remap the shorelines)?", default=False):
+        cleared = []
+        for item in output_dir.iterdir():
+            if item.is_file():
+                item.unlink()
+                cleared.append(item.name)
+        typer.secho(f"  ✓ Cleared {len(cleared)} files from output directory.", fg=typer.colors.YELLOW)
+
+    # Step 5: Regenerate transects if needed
+    if regenerate_transects:
+        typer.echo("\n→ Regenerating transects with updated settings…")
+        try:
+            shoreline_path = Path(os.path.join(base_dir, config["inputs"]["reference_shoreline"]))
+            shoreline_gdf = gpd.read_file(shoreline_path)
+            reference_projected = shoreline_gdf.to_crs(epsg=config.get("output_epsg"))
+            transects_gdf = generate_transects_along_line(
+                reference_projected,
+                spacing=transect_settings.get("transect_spacing", 100),
+                length=transect_settings.get("transect_length", 200),
+                offset_ratio=transect_settings.get("transect_offset_ratio", 0.75),
+                skip_threshold=transect_settings.get("transect_skip_threshold", 300)
+            )
+            transects_path = Path(os.path.join(base_dir, config["inputs"]["transects"]))
+            transects_gdf.to_file(transects_path, driver="GeoJSON")
+            typer.secho(f"  ✓ Transects regenerated and saved to {transects_path}", fg=typer.colors.GREEN)
+        except Exception as e:
+            typer.secho(f"❌ Failed to regenerate transects: {e}", fg=typer.colors.RED)
+            raise typer.Exit()
+
+    # Step 6: Prompt to run analysis
+    typer.echo("\n→ Would you like to run the full analysis now?")
+    root_msg = tk.Tk()
+    root_msg.withdraw()
+    root_msg.attributes("-topmost", True)
+    run_now = messagebox.askyesno("Run Analysis", f"Rerun analysis for {config['inputs']['sitename']}?")
+    root_msg.destroy()
+
+    if not run_now:
+        typer.secho("  ⚠️  Rerun cancelled by user.", fg=typer.colors.YELLOW)
+        return
+
+    cmd = [
+        "python",
+        "Complete_Analysis.py",
+        "--config", str(settings_path)
+    ]
+    typer.echo(f"\n→ Running analysis: {' '.join(cmd)}")
+    result = subprocess.run(cmd)
+    if result.returncode == 0:
+        typer.secho(f"  ✓ Rerun for {config['inputs']['sitename']} completed successfully!", fg=typer.colors.GREEN)
+    else:
+        typer.secho(f"  ❌ Rerun failed with exit code {result.returncode}.", fg=typer.colors.RED)
+
 
 
 
