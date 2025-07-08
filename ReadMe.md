@@ -12,6 +12,7 @@ Automate shoreline extraction and analysis using CoastSat via a simple CLI.
    3.1 [Initialize a Project](#31-initialize-a-project)
    3.2 [Run the Complete Analysis](#32-run-the-complete-analysis)
    3.3 [Inspect Output](#33-inspect-output)
+   3.4 [Rerun a site](#34-rerun-a-site)
 4. [CLI Commands](#cli-commands)
 5. [Settings File (settings.json)](#settings-file-settingsjson)
 6. [Directory Structure](#directory-structure)
@@ -286,6 +287,28 @@ outputs/
 │   ├─ transect_time_series.csv
 │   └─ transect_time_series_tidally_corrected.csv
 ```
+### 3.4 Rerun an Existing Project with Updated Inputs
+
+If your initial CoastSat results were unsatisfactory (e.g., due to poor transect placement or outdated shoreline data), the `site-rerun` command allows you to reprocess a site without creating a new project from scratch.
+
+This command lets you:
+- Replace the **reference shoreline** file
+- Replace or regenerate the **transects** (with optional updated settings)
+- **Clear previous outputs** to remap shorelines from scratch
+- Launch the full analysis again using the updated inputs
+
+#### ✅ Example usage:
+```bash
+python coastsatcli.py site-rerun
+```
+
+You’ll be prompted to:
+1. Select an existing `settings.json` file
+2. Choose whether to replace or regenerate shoreline/transect files
+3. (Optionally) clear existing outputs
+4. Rerun the analysis using the updated inputs
+
+**Note:** The original `settings.json` is not modified beyond resolving input paths. Only the input files are updated or regenerated as needed.
 
 ---
 
