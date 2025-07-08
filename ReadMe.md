@@ -12,7 +12,7 @@ Automate shoreline extraction and analysis using CoastSat via a simple CLI.
    3.1 [Initialize a Project](#31-initialize-a-project)
    3.2 [Run the Complete Analysis](#32-run-the-complete-analysis)
    3.3 [Inspect Output](#33-inspect-output)
-   3.4 [Rerun a site](#34-rerun-a-site)
+   3.4 [Rerun an Existing Project with Updated Inputs](#34-rerun-an-existing-project-with-updated-inputs)
 4. [CLI Commands](#cli-commands)
 5. [Settings File (settings.json)](#settings-file-settingsjson)
 6. [Directory Structure](#directory-structure)
