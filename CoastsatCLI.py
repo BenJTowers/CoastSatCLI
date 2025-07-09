@@ -289,14 +289,22 @@ def site_rerun():
 
     # Track what needs regeneration
     regenerate_transects = False
-    transect_settings = None
+    transect_settings = {
+        "transect_spacing": 100.0,
+        "transect_length": 200.0,
+        "transect_offset_ratio": 0.75,
+        "transect_skip_threshold": 500.0
+    }
 
     # Step 3: Override options
     typer.echo("→ Step 2: Would you like to override any of the following inputs?")
 
     if typer.confirm("  • Reference shoreline file?", default=False):
         ref_path = choose_file("Select new reference shoreline", filetypes=[("GeoJSON", "*.geojson"), ("Shapefile", "*.shp")])
-        config["inputs"]["reference_shoreline"] = str(Path(ref_path).resolve())
+        ref_path = Path(ref_path).expanduser().resolve()
+        target_path = Path(os.path.join(base_dir,config["inputs"]["reference_shoreline"])).resolve()
+        shutil.copy2(ref_path, target_path)
+        typer.secho(f"  ✓ Replaced existing reference shoreline with: {ref_path.name}", fg=typer.colors.GREEN)
         regenerate_transects = True
 
     if typer.confirm("  • Transects file?", default=False):
@@ -309,7 +317,7 @@ def site_rerun():
         regenerate_transects = True
 
     # Step 4: Optionally clear previous outputs
-    output_dir = Path(os.path.join(base_dir, "outputs"))
+    output_dir = Path(os.path.join(base_dir, "outputs")).resolve()
     if output_dir.exists() and typer.confirm("\nDo you want to clear previous outputs (this will remap the shorelines)?", default=False):
         cleared = []
         for item in output_dir.iterdir():
@@ -322,9 +330,9 @@ def site_rerun():
     if regenerate_transects:
         typer.echo("\n→ Regenerating transects with updated settings…")
         try:
-            shoreline_path = Path(os.path.join(base_dir, config["inputs"]["reference_shoreline"]))
+            shoreline_path = Path(os.path.join(base_dir, config["inputs"]["reference_shoreline"])).resolve()
             shoreline_gdf = gpd.read_file(shoreline_path)
-            reference_projected = shoreline_gdf.to_crs(epsg=config.get("output_epsg"))
+            reference_projected = shoreline_gdf.to_crs(epsg=config["output_epsg"])
             transects_gdf = generate_transects_along_line(
                 reference_projected,
                 spacing=transect_settings.get("transect_spacing", 100),
