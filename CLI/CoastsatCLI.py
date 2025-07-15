@@ -314,3 +314,6 @@ def run(
         typer.secho("\n✅ Analysis completed successfully!", fg=typer.colors.GREEN)
     else:
         typer.secho(f"\n❌ Analysis failed with exit code {exit_code}.", fg=typer.colors.RED)
+
+if __name__ == "__main__":
+    app()

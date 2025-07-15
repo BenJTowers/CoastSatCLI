@@ -222,7 +222,7 @@ Below is a minimal workflow. After installation, you will:
 ### 3.1 Initialize a Project
 
 ```bash
-python coastsatcli.py init
+python cli/coastsatcli.py init
 ```
 
 You will be prompted to:
@@ -257,7 +257,7 @@ Structure:
 ### 3.2 Run the Complete Analysis
 
 ```bash
-python coastsatcli.py run --config path/to/<sitename>/settings.json
+python cli/coastsatcli.py run --config path/to/<sitename>/settings.json
 ```
 
 This runs:
@@ -268,26 +268,7 @@ python Complete_Analysis.py --config path/to/settings.json
 
 Which downloads imagery, extracts shorelines, applies FES2022 tide correction, generates slope plots, and more.
 
-### 3.3 Inspect Output
-
-```bash
-python coastsatcli.py show --config path/to/<sitename>/settings.json
-```
-
-Sample output:
-
-```
-outputs/
-├─ <sitename>_output_points.geojson
-├─ mapped_shorelines.jpg
-├─ plots/
-│   ├─ tide_timeseries.jpg
-│   ├─ energy_curve_<transect>.jpg
-├─ time_series/
-│   ├─ transect_time_series.csv
-│   └─ transect_time_series_tidally_corrected.csv
-```
-### 3.4 Rerun an Existing Project with Updated Inputs
+### 3.3 Rerun an Existing Project with Updated Inputs
 
 If your initial CoastSat results were unsatisfactory (e.g., due to poor transect placement or outdated shoreline data), the `site-rerun` command allows you to reprocess a site without creating a new project from scratch.
 
@@ -299,7 +280,7 @@ This command lets you:
 
 #### ✅ Example usage:
 ```bash
-python coastsatcli.py site-rerun
+python cli/coastsatcli.py site-rerun
 ```
 
 You’ll be prompted to:
@@ -315,7 +296,7 @@ You’ll be prompted to:
 ## CLI Commands
 
 ```
-Usage: python coastsatcli.py [OPTIONS] COMMAND [ARGS]...
+Usage: python cli/coastsatcli.py [OPTIONS] COMMAND [ARGS]...
 
 Options:
   --help  Show this message and exit.
