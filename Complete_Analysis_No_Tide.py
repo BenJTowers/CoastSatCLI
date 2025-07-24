@@ -57,9 +57,16 @@ def load_settings(config_path):
     for key in ('aoi_path', 'reference_shoreline', 'transects'):
         if key in inputs_config:
             inputs_config[key] = str((base_dir / inputs_config[key]).resolve())
-    # FES2022 YAML: absolute path
-    if 'fes_config' in inputs_config:
-        inputs_config['fes_config'] = str(Path(inputs_config['fes_config']).expanduser().resolve())
+    # Tide CSV: absolute path
+    if 'tide_csv_path' in inputs_config:
+        inputs_config['tide_csv_path'] = str(Path(inputs_config['tide_csv_path']).expanduser().resolve())
+    
+    if 'reference_elevation' in inputs_config:
+        inputs_config['reference_elevation'] = float(inputs_config['reference_elevation'])
+    
+    if 'beach_slope' in inputs_config:
+        inputs_config['beach_slope'] = float(inputs_config['beach_slope'])
+
     
     if 'output_epsg' not in config:
         raise KeyError("settings.json must include an 'output_epsg' entry.")
@@ -102,7 +109,7 @@ def initial_settings(config):
         'filepath': filepath_data,
         'reference_geojson': config['inputs']['reference_shoreline'],
         'transect_geojson':   config['inputs']['transects'],
-        'fes_config': config['inputs']['fes_config'],
+        'tide_csv_path': config['inputs']['tide_csv_path'],
         # 'excluded_epsg_codes': ['32609'],
         # 'LandsatWRS': '055022',
         #'S2tile': '09UVA',
@@ -136,6 +143,10 @@ def initial_settings(config):
         's2cloudless_prob': 20,  # Threshold to identify cloud pixels in the s2cloudless probability mask
         # Add the inputs defined previously
         'inputs': inputs,
+        'tide': {
+            'reference_elevation': config['reference_elevation'],
+            'beach_slope': config['beach_slope'],
+        }
     }
 
     return inputs, settings, metadata
@@ -354,11 +365,12 @@ def apply_csv_tide_correction(settings, cross_distance, output):
     Returns tidally corrected cross-distance dict and matched tide values.
     """
 
-    tide_csv_path = settings['tide_csv_path']
-    reference_elevation = settings.get('reference_elevation', 0)
-    beach_slope = settings.get('beach_slope', 0.1)
+    tide_csv_path = settings['inputs']['tide_csv_path']
+    reference_elevation = settings['tide'].get('reference_elevation', 0)
+    beach_slope = settings['tide'].get('beach_slope', 0.1)
     filepath = settings['inputs']['filepath']
     sitename = settings['inputs']['sitename']
+
 
     # Load CSV tide data
     tide_data = pd.read_csv(tide_csv_path)

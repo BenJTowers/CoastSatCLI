@@ -3,6 +3,7 @@ from tkinter import filedialog, messagebox
 import typer
 from pathlib import Path
 import subprocess
+import json
 
 def choose_file(
     title: str = "Select a file",
@@ -75,6 +76,32 @@ def choose_file_multiple(title: str = "Select AOI file(s)") -> list[str]:
         if not typer.confirm("No files were selected. Would you like to try again?"):
             typer.secho("  ⚠️  Operation cancelled by user.", fg=typer.colors.YELLOW)
             raise typer.Exit()
+
+def get_tide_correction_settings() -> dict:
+    """
+    Ask the user which tide correction method to use (CSV or FES),
+    and gather all required inputs for that method using GUI dialogs.
+    """
+    typer.echo("→ How would you like to apply tidal correction?")
+    typer.echo("   • csv : Use a tide level CSV file (e.g., from tide gauge or external source)")
+    typer.echo("   • fes : Use the built-in FES2022 tide model (requires YAML config)")
+
+    method = typer.prompt("  Enter your choice [csv/fes]", default="fes").strip().lower()
+    settings = {"method": method}
+
+    if method == "csv":
+        typer.echo("\n→ Tide CSV selected.")
+        settings["tide_csv_path"] = choose_file("Select Tide CSV", filetypes=[("CSV files", "*.csv")])
+        settings["reference_elevation"] = float(typer.prompt("Reference elevation (e.g., 0 for MSL)", default="0"))
+        settings["beach_slope"] = float(typer.prompt("Beach slope (e.g., 0.1)", default="0.1"))
+    elif method == "fes":
+        typer.echo("\n→ FES tide model selected.")
+        settings["fes_config"] = choose_file("Select FES2022 YAML config", filetypes=[("YAML files", "*.yaml;*.yml")])
+    else:
+        typer.secho("❌ Invalid method. Choose 'csv' or 'fes'.", fg=typer.colors.RED)
+        raise typer.Exit()
+
+    return settings
         
 def get_transect_settings_from_user() -> dict:
     if typer.confirm("→ Do you want to customize transect settings?", default=False):
@@ -125,7 +152,7 @@ def prompt_and_run_analysis(settings_paths: list[str]):
 
 def run_analysis_from_config(config_path: Path) -> int:
     """
-    Runs the Complete_Analysis.py script with the given settings.json.
+    Runs the appropriate analysis script based on the settings.json tide config.
 
     Parameters:
         config_path (Path): Path to the settings.json file.
@@ -138,11 +165,16 @@ def run_analysis_from_config(config_path: Path) -> int:
         typer.secho(f"ERROR: Cannot find config at {config_path}", fg=typer.colors.RED)
         raise typer.Exit(code=1)
 
-    cmd = [
-        "python",
-        "Complete_Analysis.py",
-        "--config", str(config_path)
-    ]
+    with open(config_path) as f:
+        config = json.load(f)
+
+    inputs = config.get("inputs", {})
+    if "tide_csv_path" in inputs:
+        script = "Complete_Analysis_CSV.py"
+    else:
+        script = "Complete_Analysis.py"
+
+    cmd = ["python", script, "--config", str(config_path)]
     typer.echo(f"\n→ Running analysis: {' '.join(cmd)}")
     result = subprocess.run(cmd)
     return result.returncode

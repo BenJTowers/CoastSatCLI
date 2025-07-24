@@ -4,7 +4,7 @@ import time
 import json
 import geopandas as gpd
 from pathlib import Path
-from dialogs import choose_file, choose_folder, choose_file_multiple, get_transect_settings_from_user, prompt_and_run_analysis, run_analysis_from_config
+from dialogs import choose_file, choose_folder, choose_file_multiple, get_transect_settings_from_user, prompt_and_run_analysis, run_analysis_from_config, get_tide_correction_settings
 from file_utils import setup_project_directories, clear_output_directory
 from geo_utils import detect_or_prompt_epsg, load_aoi_and_shoreline, create_and_save_reference_shoreline, generate_and_save_transects, regenerate_transects_from_config
 import shutil
@@ -18,7 +18,7 @@ def initialize_single_site(
     aoi_path: str,
     sitename: str,
     shoreline_path: str,
-    fes_config_path: str,
+    tide_config: dict,
     base_dir: str,
     preloaded_shoreline: gpd.GeoDataFrame = None,
     transect_spacing: float = 100.0,
@@ -93,11 +93,20 @@ def initialize_single_site(
             "aoi_path": os.path.relpath(aoi_dest, start=site_dir),
             "reference_shoreline": os.path.relpath(ref_out_path, start=site_dir),
             "transects": os.path.relpath(transects_out_path, start=site_dir),
-            "fes_config": fes_config_path
         },
         "output_dir": os.path.relpath(output_dir, start=site_dir),
         "output_epsg": auto_epsg
     }
+
+    # Add tide config
+    if tide_config["method"] == "fes":
+        settings["inputs"]["fes_config"] = tide_config["fes_config_path"]
+    elif tide_config["method"] == "csv":
+        settings["inputs"].update({
+            "tide_csv_path": tide_config["tide_csv_path"],
+            "reference_elevation": tide_config["reference_elevation"],
+            "beach_slope": tide_config["beach_slope"]
+        })
 
     settings_path = os.path.join(site_dir, "settings.json")
     with open(settings_path, "w") as f:
@@ -109,7 +118,12 @@ def initialize_single_site(
     typer.echo(f"  • AOI (rel. path)     : {settings['inputs']['aoi_path']}")
     typer.echo(f"  • Reference GeoJSON   : {settings['inputs']['reference_shoreline']}")
     typer.echo(f"  • Transects GeoJSON   : {settings['inputs']['transects']}")
-    typer.echo(f"  • FES YAML (abs. path): {settings['inputs']['fes_config']}")
+    if tide_config["method"] == "fes":
+        typer.echo(f"  • FES YAML (abs. path): {settings['inputs']['fes_config']}")
+    elif tide_config["method"] == "csv":
+        typer.echo(f"  • Tide CSV (abs. path): {settings['inputs']['tide_csv_path']}")
+        typer.echo(f"  • Ref. Elevation      : {settings['inputs']['reference_elevation']}")
+        typer.echo(f"  • Beach Slope         : {settings['inputs']['beach_slope']}")
     typer.echo(f"  • Output directory    : {settings['output_dir']}\n")
     typer.echo(f"  ⏱ Site processed in {time.time() - start:.2f} seconds")
 
@@ -167,9 +181,9 @@ def init():
         raise typer.Exit()
 
     # 5) Prompt for FES YAML (no copy)
-    typer.echo("\n→ Step 4: Select your FES2022 YAML configuration (no copy will be made).")
-    fes_config_path = choose_file("Select FES2022 YAML file", filetypes=[("YAML files", "*.yaml;*.yml")])
-    typer.secho(f"  ✓ FES2022 config set to {fes_config_path}\n", fg=typer.colors.GREEN)
+    # 5) Prompt for tide correction method (CSV or FES)
+    typer.echo("\n→ Step 4: Choose a tidal correction method.")
+    tide_config = get_tide_correction_settings()
 
     is_batch = typer.confirm("Would you like to initialize multiple AOIs as a batch?", default=False)
 
@@ -186,7 +200,7 @@ def init():
                 aoi_path=aoi_src,
                 sitename=full_sitename,
                 shoreline_path=shoreline_src,
-                fes_config_path=fes_config_path,
+                tide_config=tide_config,
                 base_dir=project_dir,
                 preloaded_shoreline=shoreline_gdf,
                 transect_spacing=transect_settings["transect_spacing"],
@@ -217,7 +231,7 @@ def init():
             aoi_path=aoi_src,
             sitename=sitename,
             shoreline_path=shoreline_src,
-            fes_config_path=fes_config_path,
+            tide_config=tide_config,
             base_dir=project_dir,
             preloaded_shoreline=shoreline_gdf,
             transect_spacing=transect_settings["transect_spacing"],
