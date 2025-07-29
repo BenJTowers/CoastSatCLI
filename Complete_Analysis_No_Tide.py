@@ -45,37 +45,40 @@ from coastsat import (
 
 def load_settings(config_path):
     """
-    Load CLI-generated settings.json and resolve all relative paths, including FES config.
+    Load CSV-based tide correction config and resolve all relevant paths.
+    This assumes tide correction values are directly inside the 'inputs' block.
     """
+    from pathlib import Path
+    import json
+
     config_path = Path(config_path).expanduser().resolve()
     with open(config_path, 'r') as f:
         config = json.load(f)
     base_dir = config_path.parent
 
     inputs_config = config.get('inputs', {})
-    # standard paths
     for key in ('aoi_path', 'reference_shoreline', 'transects'):
         if key in inputs_config:
             inputs_config[key] = str((base_dir / inputs_config[key]).resolve())
-    # Tide CSV: absolute path
-    if 'tide_csv_path' in inputs_config:
-        inputs_config['tide_csv_path'] = str(Path(inputs_config['tide_csv_path']).expanduser().resolve())
-    
-    if 'reference_elevation' in inputs_config:
-        inputs_config['reference_elevation'] = float(inputs_config['reference_elevation'])
-    
-    if 'beach_slope' in inputs_config:
-        inputs_config['beach_slope'] = float(inputs_config['beach_slope'])
 
-    
-    if 'output_epsg' not in config:
-        raise KeyError("settings.json must include an 'output_epsg' entry.")
+    # CSV tide correction (flat inside 'inputs')
+    try:
+        config['tide_csv_path'] = str(Path(inputs_config['tide_csv_path']).expanduser().resolve())
+        config['reference_elevation'] = float(inputs_config['reference_elevation'])
+        config['beach_slope'] = float(inputs_config['beach_slope'])
+    except KeyError as e:
+        raise KeyError(f"Missing tide correction field in 'inputs': {e}")
 
-    # output dir
+    # Resolve output directory
     if 'output_dir' in config:
         config['output_dir'] = str((base_dir / config['output_dir']).resolve())
 
+    if 'output_epsg' not in config:
+        raise KeyError("settings.json must include an 'output_epsg' entry.")
+
+    config['inputs'] = inputs_config
     return config
+
 
 
 def initial_settings(config):
@@ -89,7 +92,7 @@ def initial_settings(config):
     polygon = SDS_tools.smallest_rectangle(polygon)
 
     # Date range
-    dates = ['1984-01-01', '2025-01-01']
+    dates = ['2024-01-01', '2024-12-31']
 
     # TODO: Set sat list and date range
     # Satellites
