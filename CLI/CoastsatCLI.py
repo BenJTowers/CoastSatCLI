@@ -100,7 +100,7 @@ def initialize_single_site(
 
     # Add tide config
     if tide_config["method"] == "fes":
-        settings["inputs"]["fes_config"] = tide_config["fes_config_path"]
+        settings["inputs"]["fes_config"] = tide_config["fes_config"]
     elif tide_config["method"] == "csv":
         settings["inputs"].update({
             "tide_csv_path": tide_config["tide_csv_path"],
