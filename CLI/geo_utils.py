@@ -2,6 +2,7 @@ import math
 import typer
 import geopandas as gpd
 from pathlib import Path
+from shapely import union_all
 from shapely.geometry import LineString, Point, MultiPoint, GeometryCollection
 from shapely.ops import linemerge, unary_union
 import numpy as np
@@ -175,18 +176,27 @@ def generate_transects_along_line(clipped_gdf: gpd.GeoDataFrame, spacing=50, len
     transects = []
     names = []
 
-    # Dissolve all shoreline features into connected lines
-    merged = linemerge(clipped_gdf.unary_union)
+    # 🔧 Robust dissolve / linemerge
+    geom = union_all(clipped_gdf.geometry)
 
-    # Ensure we work with a list of LineStrings
-    if merged.geom_type == "MultiLineString":
-        lines = list(merged.geoms)
-    elif merged.geom_type == "LineString":
-        lines = [merged]
+    if geom.is_empty:
+        return gpd.GeoDataFrame(geometry=transects, crs=clipped_gdf.crs)
+
+    if geom.geom_type == "LineString":
+        lines = [geom]
+    elif geom.geom_type == "MultiLineString":
+        merged = linemerge(geom)
+        lines = [merged] if merged.geom_type == "LineString" else list(merged.geoms)
+    elif geom.geom_type == "GeometryCollection":
+        line_like = [g for g in geom.geoms if g.geom_type in ["LineString", "MultiLineString"]]
+        if not line_like:
+            return gpd.GeoDataFrame(geometry=transects, crs=clipped_gdf.crs)
+        merged = linemerge(line_like)
+        lines = [merged] if merged.geom_type == "LineString" else list(merged.geoms)
     else:
         return gpd.GeoDataFrame(geometry=transects, crs=clipped_gdf.crs)
 
-    shoreline_union = clipped_gdf.unary_union
+    shoreline_union = geom
     transect_id = 1  # Start naming from 1
 
     # Generate transects across all lines
