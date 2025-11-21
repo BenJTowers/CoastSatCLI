@@ -76,6 +76,32 @@ def load_settings(config_path):
     if 'output_epsg' not in config:
         raise KeyError("settings.json must include an 'output_epsg' entry.")
 
+    # Optional tide percentile filter normalization
+    tide_filter_cfg = config.get('tide_filter')
+    if tide_filter_cfg is not None:
+        if isinstance(tide_filter_cfg, (list, tuple)):
+            if len(tide_filter_cfg) != 2:
+                raise ValueError("tide_filter list must contain [lower_percentile, upper_percentile].")
+            lower, upper = tide_filter_cfg
+        elif isinstance(tide_filter_cfg, dict):
+            lower = tide_filter_cfg.get('lower_percentile')
+            upper = tide_filter_cfg.get('upper_percentile')
+        else:
+            raise TypeError("tide_filter must be provided as a dict or two-item list/tuple.")
+
+        if lower is None or upper is None:
+            raise ValueError("tide_filter requires both lower_percentile and upper_percentile values.")
+
+        lower = float(lower)
+        upper = float(upper)
+        if not (0 <= lower < upper <= 100):
+            raise ValueError("tide_filter percentiles must satisfy 0 <= lower < upper <= 100.")
+
+        config['tide_filter'] = {
+            'lower_percentile': lower,
+            'upper_percentile': upper,
+        }
+
     config['inputs'] = inputs_config
     return config
 
@@ -151,6 +177,9 @@ def initial_settings(config):
             'beach_slope': config['beach_slope'],
         }
     }
+
+    if config.get('tide_filter'):
+        settings['tide_filter'] = config['tide_filter']
 
     return inputs, settings, metadata
 
@@ -380,18 +409,66 @@ def apply_csv_tide_correction(settings, cross_distance, output):
     if 'dates' not in tide_data.columns or 'tide' not in tide_data.columns:
         raise ValueError("Tide CSV must contain 'dates' and 'tide' columns")
     dates_ts = [pd.to_datetime(d).to_pydatetime() for d in tide_data['dates']]
-    tides_ts = np.array(tide_data['tide'])
+    tides_ts = np.asarray(tide_data['tide'], dtype=float)
 
     # Get tide values at image acquisition dates
     dates_sat = output['dates']
-    tides_sat = SDS_tools.get_closest_datapoint(dates_sat, dates_ts, tides_ts)
+    tides_sat = np.asarray(SDS_tools.get_closest_datapoint(dates_sat, dates_ts, tides_ts), dtype=float)
+
+    # Optionally drop extreme tide events based on percentiles
+    tide_filter_cfg = settings.get('tide_filter')
+    tide_filter_mask = np.ones_like(tides_sat, dtype=bool)
+    tide_thresholds = {}
+    if tide_filter_cfg:
+        lower_pct = tide_filter_cfg.get('lower_percentile')
+        upper_pct = tide_filter_cfg.get('upper_percentile')
+
+        if lower_pct is not None:
+            lower_thresh = float(np.nanpercentile(tides_ts, lower_pct))
+            tide_thresholds['lower_threshold'] = lower_thresh
+            tide_filter_mask &= tides_sat >= lower_thresh
+        if upper_pct is not None:
+            upper_thresh = float(np.nanpercentile(tides_ts, upper_pct))
+            tide_thresholds['upper_threshold'] = upper_thresh
+            tide_filter_mask &= tides_sat <= upper_thresh
+
+        removed = int(np.count_nonzero(~tide_filter_mask))
+        total = int(tides_sat.size)
+        print(
+            f"Percentile tide filter ({lower_pct:g}-{upper_pct:g}%) "
+            f"removed {removed} of {total} acquisition tides."
+        )
+        settings['tide_filter_stats'] = {
+            'filter_configured': True,
+            'total_acquisitions': total,
+            'removed_acquisitions': removed,
+            'kept_acquisitions': total - removed,
+        }
+        if tide_thresholds:
+            updated_filter = tide_filter_cfg.copy()
+            updated_filter.update(tide_thresholds)
+            settings['tide_filter'] = updated_filter
+            tide_filter_cfg = updated_filter
+    else:
+        settings['tide_filter_stats'] = {
+            'filter_configured': False,
+            'total_acquisitions': int(tide_filter_mask.size),
+            'removed_acquisitions': 0,
+            'kept_acquisitions': int(tide_filter_mask.size),
+        }
+
+    tides_sat_masked = tides_sat.copy()
+    tides_sat_masked[~tide_filter_mask] = np.nan
 
     # Apply correction
     correction = (tides_sat - reference_elevation) / beach_slope
-    cross_distance_tidally_corrected = {
-        key: cross_distance[key] + correction
-        for key in cross_distance
-    }
+    correction[~tide_filter_mask] = np.nan
+    cross_distance_tidally_corrected = {}
+    for key in cross_distance:
+        corrected = cross_distance[key] + correction
+        corrected = np.asarray(corrected, dtype=float)
+        corrected[~tide_filter_mask] = np.nan
+        cross_distance_tidally_corrected[key] = corrected
 
     # Save CSV
     out_dict = {"dates": dates_sat}
@@ -405,7 +482,7 @@ def apply_csv_tide_correction(settings, cross_distance, output):
     fig, ax = plt.subplots(1, 1, figsize=(15, 4), tight_layout=True)
     ax.grid(which='major', linestyle=':', color='0.5')
     ax.plot(dates_ts, tides_ts, '-', color='0.6', label='All tide data')
-    ax.plot(dates_sat, tides_sat, '-o', color='k', ms=6, mfc='w', lw=1, label='Image acquisition')
+    ax.plot(dates_sat, tides_sat_masked, '-o', color='k', ms=6, mfc='w', lw=1, label='Image acquisition')
     ax.set(ylabel='Tide level [m]', xlim=[dates_sat[0], dates_sat[-1]], title='Tide levels at image acquisition')
     ax.legend()
     fig.savefig(os.path.join(filepath, f'{sitename}_tide_timeseries.jpg'), dpi=200)
@@ -993,13 +1070,27 @@ def calculate_and_save_trends(transects, cross_distance_tidally_corrected, outpu
 
     # Create a GeoDataFrame for transects
     transect_data = []
+    total_images = len(output['dates'])
+    tide_stats = settings.get('tide_filter_stats', {})
     for key, geometry in transects.items():
 
         seasonal_plot_filename = f'{key}_seasonal_average.jpg'
         seasonal_plot_path = os.path.join(settings['inputs']['filepath'], seasonal_plot_filename)
 
         slope_energy_curve_filename = f'2_energy_curve_{key}.jpg'
-        slope_energy_curve_path = os.path.join(settings['inputs']['filepath'], 'slope_estimation', slope_energy_curve_filename)
+        slope_energy_curve_path = os.path.join(
+            settings['inputs']['filepath'], 'slope_estimation', slope_energy_curve_filename
+        )
+
+        cross = np.asarray(cross_distance_tidally_corrected.get(key, []), dtype=float)
+        n_total = cross.size
+        n_used = int(np.count_nonzero(~np.isnan(cross))) if n_total else 0
+        coverage_pct = (100 * n_used / n_total) if n_total else np.nan
+        gap_pct = (100 - coverage_pct) if np.isfinite(coverage_pct) else np.nan
+
+        tide_removed = tide_stats.get('removed_acquisitions', 0)
+        tide_total = tide_stats.get('total_acquisitions', total_images)
+        tide_removed_pct = 100 * tide_removed / tide_total if tide_total else np.nan
 
         transect_data.append({
             'id': key,
@@ -1007,7 +1098,14 @@ def calculate_and_save_trends(transects, cross_distance_tidally_corrected, outpu
             'trend': trend_dict.get(key, np.nan),
             'slope': slope_est.get(key, 0.1),
             'plot_path': seasonal_plot_path,
-            'slope_plot_path': slope_energy_curve_path
+            'slope_plot_path': slope_energy_curve_path,
+            'images_total': int(total_images),
+            'images_used': n_used,
+            'coverage_pct': coverage_pct,
+            'data_gap_pct': gap_pct,
+            'tide_filter_removed': tide_removed,
+            'tide_filter_total': tide_total,
+            'tide_filter_removed_pct': tide_removed_pct,
         })
 
     # Create GeoDataFrame

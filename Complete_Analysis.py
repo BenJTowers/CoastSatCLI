@@ -68,6 +68,32 @@ def load_settings(config_path):
     if 'output_dir' in config:
         config['output_dir'] = str((base_dir / config['output_dir']).resolve())
 
+    # Optional tide percentile filter normalization
+    tide_filter_cfg = config.get('tide_filter')
+    if tide_filter_cfg is not None:
+        if isinstance(tide_filter_cfg, (list, tuple)):
+            if len(tide_filter_cfg) != 2:
+                raise ValueError("tide_filter list must contain [lower_percentile, upper_percentile].")
+            lower, upper = tide_filter_cfg
+        elif isinstance(tide_filter_cfg, dict):
+            lower = tide_filter_cfg.get('lower_percentile')
+            upper = tide_filter_cfg.get('upper_percentile')
+        else:
+            raise TypeError("tide_filter must be provided as a dict or two-item list/tuple.")
+
+        if lower is None or upper is None:
+            raise ValueError("tide_filter requires both lower_percentile and upper_percentile values.")
+
+        lower = float(lower)
+        upper = float(upper)
+        if not (0 <= lower < upper <= 100):
+            raise ValueError("tide_filter percentiles must satisfy 0 <= lower < upper <= 100.")
+
+        config['tide_filter'] = {
+            'lower_percentile': lower,
+            'upper_percentile': upper,
+        }
+
     return config
 
 
@@ -86,7 +112,7 @@ def initial_settings(config):
 
     # TODO: Set sat list and date range
     # Satellites
-    sat_list = ['L5', 'L7', 'L8', 'L9', 'S2']
+    sat_list = ['L5', 'L7', 'L8', 'L9']
     # Name of the site
     sitename = config['inputs']['sitename']  
 
@@ -137,6 +163,9 @@ def initial_settings(config):
         # Add the inputs defined previously
         'inputs': inputs,
     }
+
+    if config.get('tide_filter'):
+        settings['tide_filter'] = config['tide_filter']
 
     return inputs, settings, metadata
 
@@ -775,12 +804,56 @@ def slope_estimation(settings, cross_distance, output):
 
     # Retrieve tide levels at each satellite acquisition date
     dates_sat = output['dates']
-    tides_sat = SDS_slope.compute_tide_dates(
-        centroid, dates_sat, ocean_tide, load_tide
+    tides_sat = np.asarray(
+        SDS_slope.compute_tide_dates(centroid, dates_sat, ocean_tide, load_tide),
+        dtype=float,
     )
 
     del ocean_tide, load_tide
     gc.collect()
+
+    # Optional percentile-based tide filtering before slope estimation
+    tide_filter_cfg = settings.get('tide_filter')
+    tide_filter_mask = np.ones_like(tides_sat, dtype=bool)
+    tide_thresholds = {}
+    if tide_filter_cfg:
+        source_series = np.asarray(tides_ts, dtype=float)
+        lower_pct = tide_filter_cfg.get('lower_percentile')
+        upper_pct = tide_filter_cfg.get('upper_percentile')
+
+        if lower_pct is not None:
+            lower_thresh = float(np.nanpercentile(source_series, lower_pct))
+            tide_thresholds['lower_threshold'] = lower_thresh
+            tide_filter_mask &= tides_sat >= lower_thresh
+        if upper_pct is not None:
+            upper_thresh = float(np.nanpercentile(source_series, upper_pct))
+            tide_thresholds['upper_threshold'] = upper_thresh
+            tide_filter_mask &= tides_sat <= upper_thresh
+
+        removed = int(np.count_nonzero(~tide_filter_mask))
+        total = int(tides_sat.size)
+        print(
+            f"Percentile tide filter ({lower_pct:g}-{upper_pct:g}%) "
+            f"removed {removed} of {total} acquisition tides."
+        )
+        settings['tide_filter_stats'] = {
+            'filter_configured': True,
+            'total_acquisitions': total,
+            'removed_acquisitions': removed,
+            'kept_acquisitions': total - removed,
+        }
+        if tide_thresholds:
+            updated_filter = tide_filter_cfg.copy()
+            updated_filter.update(tide_thresholds)
+            settings['tide_filter'] = updated_filter
+            tide_filter_cfg = updated_filter
+    else:
+        settings['tide_filter_stats'] = {
+            'filter_configured': False,
+            'total_acquisitions': int(tide_filter_mask.size),
+            'removed_acquisitions': 0,
+            'kept_acquisitions': int(tide_filter_mask.size),
+        }
 
     # Plotting the full tide series and satellite acquisition points
     if settings.get('save_figure', False):
@@ -826,8 +899,25 @@ def slope_estimation(settings, cross_distance, output):
     date_end = pytz.utc.localize(datetime(2025, 1, 1))
 
     # Filter the `dates_sat` and `tides_sat` based on date range for slope estimation
-    idx_dates = [date_start < date < date_end for date in dates_sat]
-    selected_indices = np.where(idx_dates)[0]
+    idx_dates = np.array([date_start < date < date_end for date in dates_sat], dtype=bool)
+    combined_mask = idx_dates.copy()
+    if tide_filter_cfg:
+        combined_mask = combined_mask & tide_filter_mask
+    selected_indices = np.where(combined_mask)[0]
+    if selected_indices.size == 0:
+        if tide_filter_cfg:
+            print(
+                "No acquisition dates remain after applying the percentile tide filter within the slope "
+                "estimation window. Falling back to date-range filtering only."
+            )
+        selected_indices = np.where(idx_dates)[0]
+    if selected_indices.size == 0:
+        print("No acquisition dates fall within the slope estimation window; using all dates instead.")
+        selected_indices = np.arange(len(dates_sat))
+
+    stats = settings.setdefault('tide_filter_stats', {})
+    stats['used_for_slopes'] = int(selected_indices.size)
+
     filtered_dates_sat = [dates_sat[i] for i in selected_indices]
     filtered_tides_sat = tides_sat[selected_indices]
 
@@ -837,18 +927,32 @@ def slope_estimation(settings, cross_distance, output):
         filtered_cross_distance[key] = cross_distance[key][selected_indices]
 
     # Plot the distribution of time steps for filtered data
-    SDS_slope.plot_timestep(filtered_dates_sat)
-    fig = plt.gcf()
-    fig.savefig(os.path.join(fp_slopes, '0_timestep_distribution.jpg'), dpi=200)
-    plt.close(fig)
-
-    # Frequency settings and calculations
+    # Plot the distribution of time steps for filtered data
     settings_slope['n_days'] = 8
-    settings_slope['freqs_max'] = SDS_slope.find_tide_peak(filtered_dates_sat, filtered_tides_sat, settings_slope)
+    freq_band = None
+    if len(filtered_dates_sat) > 1:
+        try:
+            SDS_slope.plot_timestep(filtered_dates_sat)
+        except Exception as exc:
+            print(f"Warning: unable to plot timestep distribution after filtering: {exc}")
+        else:
+            fig = plt.gcf()
+            fig.savefig(os.path.join(fp_slopes, '0_timestep_distribution.jpg'), dpi=200)
+            plt.close(fig)
 
-    fig = plt.gcf()
-    fig.savefig(os.path.join(fp_slopes, '1_tides_power_spectrum.jpg'), dpi=200)
-    plt.close(fig)
+        try:
+            freq_band = SDS_slope.find_tide_peak(filtered_dates_sat, filtered_tides_sat, settings_slope)
+        except Exception as exc:
+            print(f"Warning: unable to compute tidal frequency band after filtering: {exc}")
+        else:
+            fig = plt.gcf()
+            fig.savefig(os.path.join(fp_slopes, '1_tides_power_spectrum.jpg'), dpi=200)
+            plt.close(fig)
+    else:
+        print("Not enough acquisition dates to characterize timestep distribution after filtering.")
+
+    if freq_band is not None:
+        settings_slope['freqs_max'] = freq_band
 
     # Dictionary to store the slope estimates per transect
     print("[Step 6] Estimating beach slopes from elevation data...\n")
@@ -909,13 +1013,27 @@ def calculate_and_save_trends(transects, cross_distance_tidally_corrected, outpu
 
     # Create a GeoDataFrame for transects
     transect_data = []
+    total_images = len(output['dates'])
+    tide_stats = settings.get('tide_filter_stats', {})
     for key, geometry in transects.items():
 
         seasonal_plot_filename = f'{key}_seasonal_average.jpg'
         seasonal_plot_path = os.path.join(settings['inputs']['filepath'], seasonal_plot_filename)
 
         slope_energy_curve_filename = f'2_energy_curve_{key}.jpg'
-        slope_energy_curve_path = os.path.join(settings['inputs']['filepath'], 'slope_estimation', slope_energy_curve_filename)
+        slope_energy_curve_path = os.path.join(
+            settings['inputs']['filepath'], 'slope_estimation', slope_energy_curve_filename
+        )
+
+        cross = np.asarray(cross_distance_tidally_corrected.get(key, []), dtype=float)
+        n_total = cross.size
+        n_used = int(np.count_nonzero(~np.isnan(cross))) if n_total else 0
+        coverage_pct = (100 * n_used / n_total) if n_total else np.nan
+        gap_pct = (100 - coverage_pct) if np.isfinite(coverage_pct) else np.nan
+
+        tide_removed = tide_stats.get('removed_acquisitions', 0)
+        tide_total = tide_stats.get('total_acquisitions', total_images)
+        tide_removed_pct = 100 * tide_removed / tide_total if tide_total else np.nan
 
         transect_data.append({
             'id': key,
@@ -923,7 +1041,14 @@ def calculate_and_save_trends(transects, cross_distance_tidally_corrected, outpu
             'trend': trend_dict.get(key, np.nan),
             'slope': slope_est.get(key, 0.1),
             'plot_path': seasonal_plot_path,
-            'slope_plot_path': slope_energy_curve_path
+            'slope_plot_path': slope_energy_curve_path,
+            'images_total': int(total_images),
+            'images_used': n_used,
+            'coverage_pct': coverage_pct,
+            'data_gap_pct': gap_pct,
+            'tide_filter_removed': tide_removed,
+            'tide_filter_total': tide_total,
+            'tide_filter_removed_pct': tide_removed_pct,
         })
 
     # Create GeoDataFrame

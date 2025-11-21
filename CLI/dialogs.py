@@ -77,6 +77,47 @@ def choose_file_multiple(title: str = "Select AOI file(s)") -> list[str]:
             typer.secho("  ⚠️  Operation cancelled by user.", fg=typer.colors.YELLOW)
             raise typer.Exit()
 
+
+
+
+def prompt_tide_filter_settings() -> dict | None:
+    """
+    Optionally gather percentile-based tide filtering bounds.
+    Returns a dict when enabled or None otherwise.
+    """
+    import typer
+    if not typer.confirm("-> Would you like to filter extreme tide levels by percentile?", default=False):
+        return None
+
+    typer.echo("   Lower percentile removes very low tides; upper percentile removes very high tides.")
+    typer.echo("   Values outside this window become NaN before slope estimation.")
+
+    def _prompt_percentile(label: str, default: float) -> float:
+        while True:
+            raw_value = typer.prompt(label, default=str(default))
+            try:
+                value = float(raw_value)
+            except ValueError:
+                typer.secho("  !! Please enter a numeric value.", fg=typer.colors.RED)
+                continue
+            if value < 0 or value > 100:
+                typer.secho("  !! Percentiles must be between 0 and 100.", fg=typer.colors.RED)
+                continue
+            return value
+
+    lower = _prompt_percentile("  Lower percentile to keep (filters out very low tides)", 5.0)
+    upper = _prompt_percentile("  Upper percentile to keep (filters out very high tides)", 95.0)
+    while lower >= upper:
+        typer.secho("  !! Lower percentile must be strictly less than upper percentile.", fg=typer.colors.RED)
+        lower = _prompt_percentile("  Lower percentile to keep (filters out very low tides)", lower)
+        upper = _prompt_percentile("  Upper percentile to keep (filters out very high tides)", upper)
+
+    return {
+        'lower_percentile': lower,
+        'upper_percentile': upper,
+    }
+
+
 def get_tide_correction_settings() -> dict:
     """
     Ask the user which tide correction method to use (CSV or FES),
@@ -100,6 +141,10 @@ def get_tide_correction_settings() -> dict:
     else:
         typer.secho("❌ Invalid method. Choose 'csv' or 'fes'.", fg=typer.colors.RED)
         raise typer.Exit()
+
+    tide_filter = prompt_tide_filter_settings()
+    if tide_filter:
+        settings['tide_filter'] = tide_filter
 
     return settings
         

@@ -107,6 +107,8 @@ def initialize_single_site(
             "reference_elevation": tide_config["reference_elevation"],
             "beach_slope": tide_config["beach_slope"]
         })
+    if tide_config.get("tide_filter"):
+        settings["tide_filter"] = tide_config["tide_filter"]
 
     settings_path = os.path.join(site_dir, "settings.json")
     with open(settings_path, "w") as f:
@@ -124,6 +126,9 @@ def initialize_single_site(
         typer.echo(f"  • Tide CSV (abs. path): {settings['inputs']['tide_csv_path']}")
         typer.echo(f"  • Ref. Elevation      : {settings['inputs']['reference_elevation']}")
         typer.echo(f"  • Beach Slope         : {settings['inputs']['beach_slope']}")
+    if tide_config.get("tide_filter"):
+        tf = tide_config["tide_filter"]
+        typer.echo(f"  �� Tide filter percentiles : {tf['lower_percentile']:g} - {tf['upper_percentile']:g}")
     typer.echo(f"  • Output directory    : {settings['output_dir']}\n")
     typer.echo(f"  ⏱ Site processed in {time.time() - start:.2f} seconds")
 
